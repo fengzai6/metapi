@@ -6,6 +6,7 @@ type Item = {
   isPinned?: boolean | null;
   sortOrder?: number | null;
   balance?: number | null;
+  status?: string | null;
 };
 
 function ids(items: Item[]): number[] {
@@ -14,10 +15,10 @@ function ids(items: Item[]): number[] {
 
 describe('sortItemsForDisplay', () => {
   const base: Item[] = [
-    { id: 1, isPinned: false, sortOrder: 2, balance: 5 },
-    { id: 2, isPinned: true, sortOrder: 1, balance: 1 },
-    { id: 3, isPinned: false, sortOrder: 0, balance: 20 },
-    { id: 4, isPinned: true, sortOrder: 0, balance: 10 },
+    { id: 1, isPinned: false, sortOrder: 2, balance: 5, status: 'active' },
+    { id: 2, isPinned: true, sortOrder: 1, balance: 1, status: 'active' },
+    { id: 3, isPinned: false, sortOrder: 0, balance: 20, status: 'active' },
+    { id: 4, isPinned: true, sortOrder: 0, balance: 10, status: 'active' },
   ];
 
   it('keeps pinned items first in custom mode', () => {
@@ -35,14 +36,47 @@ describe('sortItemsForDisplay', () => {
     const sorted = sortItemsForDisplay(base, 'balance-asc', (item) => item.balance || 0);
     expect(ids(sorted)).toEqual([2, 4, 1, 3]);
   });
+
+  it('prioritizes active status over disabled in custom mode', () => {
+    const items: Item[] = [
+      { id: 1, isPinned: false, sortOrder: 0, balance: 5, status: 'disabled' },
+      { id: 2, isPinned: false, sortOrder: 1, balance: 10, status: 'active' },
+      { id: 3, isPinned: false, sortOrder: 2, balance: 15, status: 'expired' },
+    ];
+    const sorted = sortItemsForDisplay(items, 'custom', (item) => item.balance || 0);
+    // active (id:2) > expired (id:3) > disabled (id:1)
+    expect(ids(sorted)).toEqual([2, 3, 1]);
+  });
+
+  it('prioritizes expired/failed status over disabled but after active', () => {
+    const items: Item[] = [
+      { id: 1, isPinned: false, sortOrder: 0, balance: 5, status: 'disabled' },
+      { id: 2, isPinned: false, sortOrder: 1, balance: 10, status: 'active' },
+      { id: 3, isPinned: false, sortOrder: 2, balance: 15, status: 'failed' },
+      { id: 4, isPinned: false, sortOrder: 3, balance: 20, status: 'expired' },
+    ];
+    const sorted = sortItemsForDisplay(items, 'custom', (item) => item.balance || 0);
+    // active (id:2) > failed (id:3) > expired (id:4) > disabled (id:1)
+    expect(ids(sorted)).toEqual([2, 3, 4, 1]);
+  });
+
+  it('respects sortOrder within same status group', () => {
+    const items: Item[] = [
+      { id: 1, isPinned: false, sortOrder: 1, balance: 5, status: 'active' },
+      { id: 2, isPinned: false, sortOrder: 0, balance: 10, status: 'active' },
+      { id: 3, isPinned: false, sortOrder: 2, balance: 15, status: 'active' },
+    ];
+    const sorted = sortItemsForDisplay(items, 'custom', (item) => item.balance || 0);
+    expect(ids(sorted)).toEqual([2, 1, 3]);
+  });
 });
 
 describe('buildCustomReorderUpdates', () => {
   const list: Item[] = [
-    { id: 10, isPinned: true, sortOrder: 0 },
-    { id: 11, isPinned: true, sortOrder: 1 },
-    { id: 20, isPinned: false, sortOrder: 0 },
-    { id: 21, isPinned: false, sortOrder: 1 },
+    { id: 10, isPinned: true, sortOrder: 0, status: 'active' },
+    { id: 11, isPinned: true, sortOrder: 1, status: 'active' },
+    { id: 20, isPinned: false, sortOrder: 0, status: 'active' },
+    { id: 21, isPinned: false, sortOrder: 1, status: 'active' },
   ];
 
   it('reorders only inside the same pinned group', () => {

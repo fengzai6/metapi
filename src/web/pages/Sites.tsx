@@ -287,7 +287,6 @@ export default function Sites() {
   const [disabledModels, setDisabledModels] = useState<string[]>([]);
   const [disabledModelInput, setDisabledModelInput] = useState('');
   const [disabledModelsLoading, setDisabledModelsLoading] = useState(false);
-  const [disabledModelsSaving, setDisabledModelsSaving] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [disabledModelSearch, setDisabledModelSearch] = useState('');
   const initializationPresetOptions = useMemo(() => listSiteInitializationPresets(), []);
@@ -508,24 +507,6 @@ export default function Sites() {
     setDisabledModelInput('');
   };
 
-  const handleSaveDisabledModels = async () => {
-    if (!editor || editor.mode !== 'edit') return;
-    setDisabledModelsSaving(true);
-    try {
-      await api.updateSiteDisabledModels(editor.editingSiteId, disabledModels);
-      try {
-        await api.rebuildRoutes(false, false);
-        toast.success('禁用模型列表已保存，路由已重建');
-      } catch {
-        toast.error('禁用模型列表已保存，但路由重建失败，请手动刷新路由');
-      }
-    } catch (e: any) {
-      toast.error(e.message || '保存禁用模型失败');
-    } finally {
-      setDisabledModelsSaving(false);
-    }
-  };
-
   const handleSave = async () => {
     if (!editor) return;
     const parsedGlobalWeight = Number(form.globalWeight);
@@ -599,6 +580,17 @@ export default function Sites() {
           && updated.url.trim()
         ) {
           toast.info(`已自动规范化主站点 URL 为 ${updated.url.trim()}`);
+        }
+        // 编辑模式下同时保存禁用模型列表
+        try {
+          await api.updateSiteDisabledModels(action.id, disabledModels);
+          try {
+            await api.rebuildRoutes(false, false);
+          } catch {
+            toast.error('站点已保存，但路由重建失败，请手动刷新路由');
+          }
+        } catch (e: any) {
+          toast.error(e.message || '站点已保存，但保存禁用模型失败');
         }
       }
       closeEditor();
@@ -1467,18 +1459,8 @@ export default function Sites() {
                       </button>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-                      <button
-                        onClick={handleSaveDisabledModels}
-                        disabled={disabledModelsSaving}
-                        className="btn btn-primary"
-                        style={{ fontSize: 12, padding: '6px 16px' }}
-                      >
-                        {disabledModelsSaving ? <><span className="spinner spinner-sm" style={{ borderTopColor: 'white', borderColor: 'rgba(255,255,255,0.3)' }} /> 保存中...</> : '保存禁用列表'}
-                      </button>
-                      <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                        已禁用 {disabledModels.length} 个模型
-                      </span>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 10 }}>
+                      已禁用 {disabledModels.length} 个模型，点击主窗口"保存修改"按钮后生效
                     </div>
                   </>
                 )}

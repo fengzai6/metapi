@@ -11,6 +11,7 @@ const { apiMock, toastMock } = vi.hoisted(() => ({
     getSiteDisabledModels: vi.fn(),
     getSiteAvailableModels: vi.fn(),
     updateSiteDisabledModels: vi.fn(),
+    updateSite: vi.fn(),
     rebuildRoutes: vi.fn(),
   },
   toastMock: {
@@ -62,6 +63,7 @@ describe('Sites disabled models save', () => {
     ]);
     apiMock.getSiteDisabledModels.mockResolvedValue({ models: [] });
     apiMock.getSiteAvailableModels.mockResolvedValue({ models: [] });
+    apiMock.updateSite.mockResolvedValue({ success: true });
     apiMock.updateSiteDisabledModels.mockResolvedValue({ success: true });
   });
 
@@ -107,7 +109,7 @@ describe('Sites disabled models save', () => {
       const saveButton = root.root.find((node) => (
         node.type === 'button'
         && typeof node.props.onClick === 'function'
-        && collectText(node).includes('保存禁用列表')
+        && collectText(node).includes('保存修改')
       ));
 
       await act(async () => {
@@ -115,10 +117,11 @@ describe('Sites disabled models save', () => {
       });
       await flushMicrotasks();
 
+      expect(apiMock.updateSite).toHaveBeenCalledWith(1, expect.any(Object));
       expect(apiMock.updateSiteDisabledModels).toHaveBeenCalledWith(1, []);
       expect(apiMock.rebuildRoutes).toHaveBeenCalledWith(false, false);
-      expect(toastMock.error).toHaveBeenCalledWith('禁用模型列表已保存，但路由重建失败，请手动刷新路由');
-      expect(toastMock.success).not.toHaveBeenCalledWith('禁用模型列表已保存，路由已重建');
+      expect(toastMock.error).toHaveBeenCalledWith('站点已保存，但路由重建失败，请手动刷新路由');
+      expect(toastMock.success).toHaveBeenCalledWith('站点 "Demo Site" 已更新');
     } finally {
       root?.unmount();
     }
@@ -136,7 +139,7 @@ describe('Sites disabled models save', () => {
       const saveButton = root.root.find((node: ReactTestInstance) => (
         node.type === 'button'
         && typeof node.props.onClick === 'function'
-        && collectText(node).includes('保存禁用列表')
+        && collectText(node).includes('保存修改')
       ));
 
       await act(async () => {
@@ -144,6 +147,7 @@ describe('Sites disabled models save', () => {
       });
       await flushMicrotasks();
 
+      expect(apiMock.updateSite).toHaveBeenCalledWith(1, expect.any(Object));
       expect(apiMock.updateSiteDisabledModels).toHaveBeenCalledWith(1, ['gpt-4o']);
     } finally {
       root?.unmount();
@@ -180,7 +184,7 @@ describe('Sites disabled models save', () => {
       const saveButton = root.root.find((node: ReactTestInstance) => (
         node.type === 'button'
         && typeof node.props.onClick === 'function'
-        && collectText(node).includes('保存禁用列表')
+        && collectText(node).includes('保存修改')
       ));
 
       await act(async () => {
@@ -188,6 +192,7 @@ describe('Sites disabled models save', () => {
       });
       await flushMicrotasks();
 
+      expect(apiMock.updateSite).toHaveBeenCalledWith(1, expect.any(Object));
       expect(apiMock.updateSiteDisabledModels).toHaveBeenCalledWith(1, ['gpt-4o']);
     } finally {
       root?.unmount();

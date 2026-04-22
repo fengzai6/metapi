@@ -2115,120 +2115,125 @@ export default function ProxyLogs() {
         }
       />
 
-      <div
-        className="card"
-        style={{
-          marginBottom: 12,
-          padding: 14,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
-        <div
+      <div style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          className="btn btn-ghost"
           style={{
+            border: "1px solid var(--color-border)",
+            width: "100%",
             display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+          }}
+          aria-expanded={debugTracePanelExpanded}
+          data-debug-trace-panel-toggle
+          onClick={() => setDebugTracePanelExpanded((current) => !current)}
+        >
+          <svg
+            width="14"
+            height="14"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            style={{
+              transform: debugTracePanelExpanded
+                ? "rotate(180deg)"
+                : "rotate(0deg)",
+              transition: "transform 0.2s ease",
+            }}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+          <span>代理调试追踪</span>
+          <span
+            className={`badge ${debugSettings.proxyDebugTraceEnabled ? "badge-success" : "badge-muted"}`}
+            style={{ fontSize: 11 }}
+          >
+            {debugSettings.proxyDebugTraceEnabled ? "已开启" : "未开启"}
+          </span>
+        </button>
+      </div>
+
+      {debugTracePanelExpanded && (
+        <div
+          className="card"
+          style={{
+            marginBottom: 12,
+            padding: 14,
+            display: "flex",
+            flexDirection: "column",
             gap: 12,
-            flexWrap: "wrap",
           }}
         >
-          <div>
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: "var(--color-text-primary)",
-              }}
-            >
-              代理调试追踪
-            </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
             <div
               style={{
                 fontSize: 12,
                 color: "var(--color-text-muted)",
-                marginTop: 4,
               }}
             >
               未开启时不记录新追踪；追踪详情通过弹窗按需查看。
             </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ border: "1px solid var(--color-border)" }}
-              aria-expanded={debugTracePanelExpanded}
-              data-debug-trace-panel-toggle
-              onClick={() => setDebugTracePanelExpanded((current) => !current)}
-            >
-              <svg
-                width="14"
-                height="14"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                style={{
-                  transform: debugTracePanelExpanded
-                    ? "rotate(180deg)"
-                    : "rotate(0deg)",
-                  transition: "transform 0.2s ease",
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className={
+                  debugSettings.proxyDebugTraceEnabled
+                    ? "btn btn-ghost btn-ghost-active"
+                    : "btn btn-ghost"
+                }
+                style={{ border: "1px solid var(--color-border)" }}
+                onClick={() => void handleQuickToggleDebugTrace()}
+                disabled={debugPanelSaving}
+              >
+                {debugSettings.proxyDebugTraceEnabled ? "关闭调试" : "开启调试"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ border: "1px solid var(--color-border)" }}
+                onClick={() => {
+                  setDebugDraftSettings(debugSettings);
+                  setShowDebugSettingsModal(true);
                 }}
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-              {debugTracePanelExpanded ? "收起追踪面板" : "展开追踪面板"}
-            </button>
-            <button
-              type="button"
-              className={
-                debugSettings.proxyDebugTraceEnabled
-                  ? "btn btn-ghost btn-ghost-active"
-                  : "btn btn-ghost"
-              }
-              style={{ border: "1px solid var(--color-border)" }}
-              onClick={() => void handleQuickToggleDebugTrace()}
-              disabled={debugPanelSaving}
-            >
-              {debugSettings.proxyDebugTraceEnabled ? "关闭调试" : "开启调试"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ border: "1px solid var(--color-border)" }}
-              onClick={() => {
-                setDebugDraftSettings(debugSettings);
-                setShowDebugSettingsModal(true);
-              }}
-            >
-              调试设置
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ border: "1px solid var(--color-border)" }}
-              onClick={() => void loadDebugState()}
-              disabled={debugPanelLoading}
-            >
-              {debugPanelLoading ? "刷新中..." : "刷新追踪"}
-            </button>
+                调试设置
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ border: "1px solid var(--color-border)" }}
+                onClick={() => void loadDebugState()}
+                disabled={debugPanelLoading}
+              >
+                {debugPanelLoading ? "刷新中..." : "刷新追踪"}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "12px 18px",
-            alignItems: "center",
-          }}
-        >
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "12px 18px",
+              alignItems: "center",
+            }}
+          >
           <CompactSummaryMetric
             label="状态"
             value={debugSettings.proxyDebugTraceEnabled ? "已开启" : "未开启"}
@@ -2255,7 +2260,8 @@ export default function ProxyLogs() {
             过滤范围：{formatProxyDebugTargetSummary(debugSettings)}
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
       <div
         className={`anim-collapse ${debugTracePanelExpanded ? "is-open" : ""}`.trim()}
