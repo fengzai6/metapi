@@ -52,7 +52,7 @@ interface ProxyUsageFallbackResult extends ProxyUsage {
   recoveredFromSelfLog: boolean;
   estimatedCostFromQuota: number;
   selfLogBillingMeta: SelfLogBillingMeta | null;
-  usageSource: 'upstream' | 'self-log' | 'unknown';
+  usageSource: 'upstream' | 'self-log' | 'estimated' | 'unknown';
 }
 
 export interface SelfLogBillingMeta {

@@ -338,6 +338,7 @@ function formatProxyLogUsageSource(
 ): string | null {
   if (source === "upstream") return "上游返回";
   if (source === "self-log") return "站点日志回填";
+  if (source === "estimated") return "本地估算";
   if (source === "unknown") return "未知";
   return null;
 }

@@ -19,6 +19,13 @@ import { refreshOauthAccessTokenSingleflight } from '../../services/oauth/refres
 import { proxyChannelCoordinator } from '../../services/proxyChannelCoordinator.js';
 import { readRuntimeResponseText } from '../executors/types.js';
 import { selectProxyChannelForAttempt } from '../channelSelection.js';
+import {
+  estimateTokenCount,
+  extractRequestText,
+  extractResponseText,
+  extractTextFromSseStream,
+  estimateRequestImageTokens,
+} from '../../services/tokenEstimationService.js';
 
 type SelectedChannel = Awaited<ReturnType<typeof tokenRouter.selectChannel>>;
 type SurfaceWarningScope = 'chat' | 'responses';
@@ -98,7 +105,7 @@ type SurfaceResolvedUsageSummary = {
   recoveredFromSelfLog: boolean;
   estimatedCostFromQuota: number;
   selfLogBillingMeta: import('../../services/proxyUsageFallbackService.js').SelfLogBillingMeta | null;
-  usageSource: 'upstream' | 'self-log' | 'unknown';
+  usageSource: 'upstream' | 'self-log' | 'estimated' | 'unknown';
 };
 
 export async function selectSurfaceChannelForAttempt(input: {
@@ -203,7 +210,7 @@ export async function writeSurfaceProxyLog(input: {
   estimatedCost?: number;
   billingDetails?: unknown;
   upstreamPath?: string | null;
-  usageSource?: 'upstream' | 'self-log' | 'unknown' | null;
+  usageSource?: 'upstream' | 'self-log' | 'estimated' | 'unknown' | null;
   clientContext?: DownstreamClientContext | null;
   downstreamApiKeyId?: number | null;
 }): Promise<void> {
@@ -338,6 +345,8 @@ export async function recordSurfaceSuccess(input: {
   latencyMs: number;
   retryCount: number;
   upstreamPath?: string | null;
+  requestBody?: unknown;
+  responseBody?: unknown;
   logSuccess: (args: {
     selected: SurfaceSelectedChannel;
     modelRequested: string;
@@ -351,7 +360,7 @@ export async function recordSurfaceSuccess(input: {
     promptTokens?: number | null;
     completionTokens?: number | null;
     totalTokens?: number | null;
-    usageSource?: 'upstream' | 'self-log' | 'unknown';
+    usageSource?: 'upstream' | 'self-log' | 'estimated' | 'unknown';
     estimatedCost?: number;
     billingDetails?: unknown;
     upstreamPath?: string | null;
@@ -399,6 +408,70 @@ export async function recordSurfaceSuccess(input: {
         totalTokens: input.parsedUsage.totalTokens,
       },
     });
+
+    // 如果仍然是 unknown，尝试使用本地估算
+    if (resolvedUsage.usageSource === 'unknown' && input.requestBody && input.responseBody) {
+      try {
+        const requestText = extractRequestText(input.requestBody, input.modelName);
+
+        // 根据是否是流式响应选择不同的提取方法
+        let responseText = '';
+        if (input.isStream && typeof input.responseBody === 'string') {
+          // 流式响应：从 SSE 格式中提取文本
+          responseText = extractTextFromSseStream(input.responseBody);
+        } else if (typeof input.responseBody === 'object' && input.responseBody) {
+          // 非流式响应：从 JSON 对象中提取
+          responseText = extractResponseText(input.responseBody);
+        } else if (typeof input.responseBody === 'string') {
+          // 尝试解析字符串
+          try {
+            const parsed = JSON.parse(input.responseBody);
+            responseText = extractResponseText(parsed);
+          } catch {
+            // 如果不是 JSON，可能是纯文本
+            responseText = input.responseBody;
+          }
+        }
+
+        if (requestText || responseText) {
+          const promptEstimation = estimateTokenCount({
+            text: requestText,
+            modelName: input.modelName,
+          });
+
+          const completionEstimation = estimateTokenCount({
+            text: responseText,
+            modelName: input.modelName,
+          });
+
+          // 添加图片 token 估算
+          const imageTokens = estimateRequestImageTokens(input.requestBody);
+
+          const totalPromptTokens = promptEstimation.tokens + imageTokens;
+          const totalCompletionTokens = completionEstimation.tokens;
+
+          resolvedUsage = {
+            promptTokens: totalPromptTokens,
+            completionTokens: totalCompletionTokens,
+            totalTokens: totalPromptTokens + totalCompletionTokens,
+            recoveredFromSelfLog: false,
+            estimatedCostFromQuota: 0,
+            selfLogBillingMeta: null,
+            usageSource: 'estimated',
+          };
+
+          console.log(
+            `[proxy/shared] estimated tokens for ${input.modelName}: ` +
+            `prompt=${totalPromptTokens} (text=${promptEstimation.tokens}, images=${imageTokens}, method=${promptEstimation.method}), ` +
+            `completion=${totalCompletionTokens} (method=${completionEstimation.method}, responseLength=${responseText.length}), ` +
+            `confidence=${promptEstimation.confidence}`
+          );
+        }
+      } catch (estimationError) {
+        console.warn('[proxy/shared] local token estimation failed', estimationError);
+      }
+    }
+
     const billing = await resolveProxyLogBilling({
       site: input.selected.site,
       account: input.selected.account,
@@ -408,6 +481,15 @@ export async function recordSurfaceSuccess(input: {
     });
     estimatedCost = billing.estimatedCost;
     billingDetails = billing.billingDetails;
+
+    // 如果是估算的，添加估算元数据
+    if (resolvedUsage.usageSource === 'estimated' && billingDetails && typeof billingDetails === 'object') {
+      (billingDetails as Record<string, unknown>).estimation = {
+        method: 'tiktoken-cl100k',
+        confidence: 'high',
+        estimatedAt: new Date().toISOString(),
+      };
+    }
   } catch (error) {
     if (!input.bestEffortMetrics) {
       throw error;
@@ -488,7 +570,7 @@ export function createSurfaceFailureToolkit(input: {
     promptTokens?: number | null;
     completionTokens?: number | null;
     totalTokens?: number | null;
-    usageSource?: 'upstream' | 'self-log' | 'unknown';
+    usageSource?: 'upstream' | 'self-log' | 'estimated' | 'unknown';
     estimatedCost?: number;
     billingDetails?: unknown;
     upstreamPath?: string | null;

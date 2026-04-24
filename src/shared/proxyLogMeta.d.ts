@@ -1,4 +1,4 @@
-export type ProxyLogUsageSource = 'upstream' | 'self-log' | 'unknown' | null;
+export type ProxyLogUsageSource = 'upstream' | 'self-log' | 'estimated' | 'unknown' | null;
 
 export type ParsedProxyLogMetadata = {
   clientKind: string | null;

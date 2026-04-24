@@ -385,7 +385,7 @@ async function logProxy(
   billingDetails: unknown = null,
   clientContext: DownstreamClientContext | null = null,
   downstreamPath = '/v1/completions',
-  usageSource: 'upstream' | 'self-log' | 'unknown' | null = null,
+  usageSource: 'upstream' | 'self-log' | 'estimated' | 'unknown' | null = null,
   isStream: boolean,
   firstByteLatencyMs: number | null,
 ) {

@@ -559,7 +559,11 @@ export async function handleChatSurfaceRequest(
           promptTokensIncludeCache: null,
         };
         let upstreamUsagePresent = false;
-        const recordStreamSuccess = async (latencyMs: number) => {
+        const recordStreamSuccess = async (latencyMs: number, streamRawText?: string) => {
+          // 直接传递 streamRawText 作为 responseBody
+          // 在 sharedSurface 中会根据 isStream 判断如何处理
+          const responseBody = streamRawText || null;
+
           await recordSurfaceSuccess({
             selected,
             requestedModel,
@@ -573,6 +577,8 @@ export async function handleChatSurfaceRequest(
             latencyMs,
             retryCount,
             upstreamPath: successfulUpstreamPath,
+            requestBody: request.body,
+            responseBody,
             logSuccess: failureToolkit.log,
             recordDownstreamCost: (estimatedCost) => {
               recordDownstreamCostUsage(request, estimatedCost);
@@ -655,7 +661,7 @@ export async function handleChatSurfaceRequest(
               }
               return;
             }
-            await recordStreamSuccess(latency);
+            await recordStreamSuccess(latency, fallbackText);
             await finalizeDebugSuccess(
               200,
               successfulUpstreamPath,
@@ -755,7 +761,7 @@ export async function handleChatSurfaceRequest(
             }
             return;
           }
-          await recordStreamSuccess(latency);
+          await recordStreamSuccess(latency, fallbackText);
           await finalizeDebugSuccess(
             200,
             successfulUpstreamPath,
@@ -841,7 +847,7 @@ export async function handleChatSurfaceRequest(
         }
 
         const latency = Date.now() - startTime;
-        await recordStreamSuccess(latency);
+        await recordStreamSuccess(latency, rawText);
         await finalizeDebugSuccess(
           200,
           successfulUpstreamPath,
@@ -937,6 +943,8 @@ export async function handleChatSurfaceRequest(
         latencyMs: latency,
         retryCount,
         upstreamPath: successfulUpstreamPath,
+        requestBody: request.body,
+        responseBody: upstreamData,
         logSuccess: failureToolkit.log,
         recordDownstreamCost: (estimatedCost) => {
           recordDownstreamCostUsage(request, estimatedCost);

@@ -230,7 +230,7 @@ async function logProxy(
   billingDetails: unknown = null,
   clientContext: DownstreamClientContext | null = null,
   downstreamPath = '/v1/embeddings',
-  usageSource: 'upstream' | 'self-log' | 'unknown' | null = null,
+  usageSource: 'upstream' | 'self-log' | 'estimated' | 'unknown' | null = null,
   isStream = false,
   firstByteLatencyMs: number | null = null,
 ) {

@@ -56,7 +56,7 @@ async function extractResponseErrorMessage(res: Response): Promise<string> {
 }
 
 function parseContentDispositionFilename(
-  headerValue: string | null,
+  headerValue: string | null
 ): string | null {
   if (!headerValue) return null;
   const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(headerValue);
@@ -89,7 +89,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 
 async function fetchAuthenticatedResponse(
   url: string,
-  options: RequestOptions = {},
+  options: RequestOptions = {}
 ): Promise<Response> {
   const {
     timeoutMs = 30_000,
@@ -143,7 +143,7 @@ async function fetchAuthenticatedResponse(
     if (error?.name === "AbortError") {
       if (externalSignal?.aborted) throw error;
       throw new Error(
-        `请求超时（${Math.max(1, Math.round(timeoutMs / 1000))}s）`,
+        `请求超时（${Math.max(1, Math.round(timeoutMs / 1000))}s）`
       );
     }
     throw error;
@@ -158,7 +158,7 @@ async function fetchAuthenticatedResponse(
 
 async function request<T = any>(
   url: string,
-  options: RequestOptions = {},
+  options: RequestOptions = {}
 ): Promise<T> {
   const res = await fetchAuthenticatedResponse(url, options);
   if (!res.ok) {
@@ -173,7 +173,7 @@ async function streamSse(
     onLog?: (entry: any) => void;
     onDone?: (payload: any) => void;
     signal?: AbortSignal;
-  },
+  }
 ) {
   const response = await fetchAuthenticatedResponse(url, {
     method: "GET",
@@ -242,7 +242,7 @@ async function streamSse(
 }
 
 function buildQueryString(
-  params?: Record<string, string | number | boolean | null | undefined>,
+  params?: Record<string, string | number | boolean | null | undefined>
 ) {
   if (!params) return "";
   const searchParams = new URLSearchParams();
@@ -316,7 +316,7 @@ function proxyTestRequest(data: ProxyTestRequestEnvelope) {
 
 async function proxyTestStreamRequest(
   data: ProxyTestRequestEnvelope,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   return fetchAuthenticatedResponse("/api/test/proxy/stream", {
     method: "POST",
@@ -420,7 +420,12 @@ export type RuntimeSettingsPayload = {
 
 export type ProxyLogStatusFilter = "all" | "success" | "failed";
 export type ProxyLogClientConfidence = "exact" | "heuristic" | "unknown" | null;
-export type ProxyLogUsageSource = "upstream" | "self-log" | "unknown" | null;
+export type ProxyLogUsageSource =
+  | "upstream"
+  | "self-log"
+  | "estimated"
+  | "unknown"
+  | null;
 
 export type ProxyLogBillingDetails = {
   quotaType: number;
@@ -789,12 +794,14 @@ export const api = {
 
   // Accounts
   getAccounts: async (params?: { includeOauth?: boolean }) => {
-    const result = await request<any>(`/api/accounts${buildQueryString(params)}`);
+    const result = await request<any>(
+      `/api/accounts${buildQueryString(params)}`
+    );
     return Array.isArray(result?.accounts) ? result.accounts : result;
   },
   getAccountsSnapshot: (options?: { refresh?: boolean }) =>
     request(
-      `/api/accounts${buildQueryString(options?.refresh ? { refresh: 1 } : undefined)}`,
+      `/api/accounts${buildQueryString(options?.refresh ? { refresh: 1 } : undefined)}`
     ) as Promise<{
       generatedAt: string;
       accounts: any[];
@@ -828,7 +835,7 @@ export const api = {
       platformUserId?: number;
       refreshToken?: string;
       tokenExpiresAt?: number;
-    },
+    }
   ) =>
     request(`/api/accounts/${id}/rebind-session`, {
       method: "POST",
@@ -923,7 +930,7 @@ export const api = {
       accountId: number;
       tokenId?: number;
       sourceModel?: string;
-    }>,
+    }>
   ) =>
     request(`/api/routes/${routeId}/channels/batch`, {
       method: "POST",
@@ -974,7 +981,7 @@ export const api = {
     request(`/api/routes/decision?model=${encodeURIComponent(model)}`),
   getRouteDecisionsBatch: (
     models: string[],
-    options?: { refreshPricingCatalog?: boolean; persistSnapshots?: boolean },
+    options?: { refreshPricingCatalog?: boolean; persistSnapshots?: boolean }
   ) =>
     request("/api/routes/decision/batch", {
       method: "POST",
@@ -988,7 +995,7 @@ export const api = {
     }),
   getRouteDecisionsByRouteBatch: (
     items: Array<{ routeId: number; model: string }>,
-    options?: { refreshPricingCatalog?: boolean; persistSnapshots?: boolean },
+    options?: { refreshPricingCatalog?: boolean; persistSnapshots?: boolean }
   ) =>
     request("/api/routes/decision/by-route/batch", {
       method: "POST",
@@ -1002,7 +1009,7 @@ export const api = {
     }),
   getRouteWideDecisionsBatch: (
     routeIds: number[],
-    options?: { refreshPricingCatalog?: boolean; persistSnapshots?: boolean },
+    options?: { refreshPricingCatalog?: boolean; persistSnapshots?: boolean }
   ) =>
     request("/api/routes/decision/route-wide/batch", {
       method: "POST",
@@ -1022,25 +1029,25 @@ export const api = {
       `/api/stats/dashboard${buildQueryString({
         view: "summary",
         ...(options?.refresh ? { refresh: 1 } : {}),
-      })}`,
+      })}`
     ),
   getDashboardInsights: (options?: { refresh?: boolean }) =>
     request(
       `/api/stats/dashboard${buildQueryString({
         view: "insights",
         ...(options?.refresh ? { refresh: 1 } : {}),
-      })}`,
+      })}`
     ),
   getProxyLogs: (params?: ProxyLogsQuery) =>
     request(
-      `/api/stats/proxy-logs${buildQueryString(params)}`,
+      `/api/stats/proxy-logs${buildQueryString(params)}`
     ) as Promise<ProxyLogsResponse>,
   getProxyLogsQuery: (params?: ProxyLogsQuery) =>
     request(
       `/api/stats/proxy-logs${buildQueryString({
         ...params,
         view: "query",
-      })}`,
+      })}`
     ) as Promise<{
       items: ProxyLogsResponse["items"];
       total: number;
@@ -1050,7 +1057,7 @@ export const api = {
   getProxyLogsMeta: (
     params?: Omit<ProxyLogsQuery, "limit" | "offset"> & {
       refresh?: number | boolean;
-    },
+    }
   ) => {
     const refresh =
       params?.refresh === true
@@ -1065,7 +1072,7 @@ export const api = {
     } as Record<string, string | number | boolean | null | undefined>;
     if (refresh === undefined) delete queryParams.refresh;
     return request(
-      `/api/stats/proxy-logs${buildQueryString(queryParams)}`,
+      `/api/stats/proxy-logs${buildQueryString(queryParams)}`
     ) as Promise<{
       clientOptions: ProxyLogsResponse["clientOptions"];
       summary: ProxyLogsResponse["summary"];
@@ -1076,11 +1083,11 @@ export const api = {
     request(`/api/stats/proxy-logs/${id}`) as Promise<ProxyLogDetail>,
   getProxyDebugTraces: (params?: { limit?: number }) =>
     request(
-      `/api/stats/proxy-debug/traces${buildQueryString(params)}`,
+      `/api/stats/proxy-debug/traces${buildQueryString(params)}`
     ) as Promise<ProxyDebugTracesResponse>,
   getProxyDebugTraceDetail: (id: number) =>
     request(
-      `/api/stats/proxy-debug/traces/${id}`,
+      `/api/stats/proxy-debug/traces/${id}`
     ) as Promise<ProxyDebugTraceDetail>,
   checkModels: (accountId: number) =>
     request(`/api/models/check/${accountId}`, { method: "POST" }),
@@ -1107,7 +1114,7 @@ export const api = {
   },
   getModelBySite: (siteId?: number, days = 7) =>
     request(
-      `/api/stats/model-by-site?${siteId ? `siteId=${siteId}&` : ""}days=${days}`,
+      `/api/stats/model-by-site?${siteId ? `siteId=${siteId}&` : ""}days=${days}`
     ),
 
   // Search
@@ -1127,7 +1134,7 @@ export const api = {
       projectId?: string;
       proxyUrl?: string | null;
       useSystemProxy?: boolean;
-    },
+    }
   ) =>
     request(`/api/oauth/providers/${encodeURIComponent(provider)}/start`, {
       method: "POST",
@@ -1135,7 +1142,7 @@ export const api = {
     }) as Promise<OAuthStartResponse>,
   getOAuthSession: (state: string) =>
     request(
-      `/api/oauth/sessions/${encodeURIComponent(state)}`,
+      `/api/oauth/sessions/${encodeURIComponent(state)}`
     ) as Promise<OAuthSessionInfo>,
   submitOAuthManualCallback: (state: string, callbackUrl: string) =>
     request(
@@ -1143,11 +1150,11 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify({ callbackUrl }),
-      },
+      }
     ) as Promise<{ success: true }>,
   getOAuthConnections: (params?: { limit?: number; offset?: number }) =>
     request(
-      `/api/oauth/connections${buildQueryString(params)}`,
+      `/api/oauth/connections${buildQueryString(params)}`
     ) as Promise<OAuthConnectionsResponse>,
   refreshOAuthConnectionQuota: (accountId: number) =>
     request(`/api/oauth/connections/${accountId}/quota/refresh`, {
@@ -1161,7 +1168,7 @@ export const api = {
     }) as Promise<OAuthQuotaBatchRefreshResponse>,
   updateOAuthConnectionProxy: (
     accountId: number,
-    data: { proxyUrl?: string | null; useSystemProxy?: boolean },
+    data: { proxyUrl?: string | null; useSystemProxy?: boolean }
   ) =>
     request(`/api/oauth/connections/${accountId}/proxy`, {
       method: "PATCH",
@@ -1169,7 +1176,7 @@ export const api = {
     }) as Promise<{ success: true }>,
   rebindOAuthConnection: (
     accountId: number,
-    data?: { proxyUrl?: string | null; useSystemProxy?: boolean },
+    data?: { proxyUrl?: string | null; useSystemProxy?: boolean }
   ) =>
     request(`/api/oauth/connections/${accountId}/rebind`, {
       method: "POST",
@@ -1221,7 +1228,7 @@ export const api = {
     }),
   getTasks: (limit = 50) =>
     request(
-      `/api/tasks?limit=${Math.max(1, Math.min(200, Math.trunc(limit)))}`,
+      `/api/tasks?limit=${Math.max(1, Math.min(200, Math.trunc(limit)))}`
     ),
   getTask: (id: string) => request(`/api/tasks/${encodeURIComponent(id)}`),
 
@@ -1270,11 +1277,11 @@ export const api = {
       onLog?: (entry: any) => void;
       onDone?: (payload: any) => void;
       signal?: AbortSignal;
-    },
+    }
   ) =>
     streamSse(
       `/api/update-center/tasks/${encodeURIComponent(taskId)}/stream`,
-      handlers,
+      handlers
     ),
   testSystemProxy: (data: SystemProxyTestRequest) =>
     request("/api/settings/system-proxy/test", {
@@ -1352,10 +1359,10 @@ export const api = {
     request(`/api/downstream-keys/${id}/overview`),
   getDownstreamApiKeyTrend: (
     id: number,
-    params?: { range?: "24h" | "7d" | "all"; timeZone?: string },
+    params?: { range?: "24h" | "7d" | "all"; timeZone?: string }
   ) =>
     request<DownstreamApiKeyTrendResponse>(
-      `/api/downstream-keys/${id}/trend${buildQueryString(params)}`,
+      `/api/downstream-keys/${id}/trend${buildQueryString(params)}`
     ),
   exportBackup: (type: "all" | "accounts" | "preferences" = "all") =>
     request(`/api/settings/backup/export?type=${encodeURIComponent(type)}`),
@@ -1450,14 +1457,14 @@ export const api = {
     }),
   getProxyFileContentDataUrl: async (
     fileId: string,
-    options: Pick<RequestOptions, "signal" | "timeoutMs"> = {},
+    options: Pick<RequestOptions, "signal" | "timeoutMs"> = {}
   ) => {
     const response = await fetchAuthenticatedResponse(
       `/v1/files/${encodeURIComponent(fileId)}/content`,
       {
         method: "GET",
         ...options,
-      },
+      }
     );
     if (!response.ok) {
       throw new Error(await extractResponseErrorMessage(response));
@@ -1468,7 +1475,7 @@ export const api = {
         .split(";")[0]
         .trim() || "application/octet-stream";
     const filename = parseContentDispositionFilename(
-      response.headers.get("content-disposition"),
+      response.headers.get("content-disposition")
     );
     const base64 = arrayBufferToBase64(await response.arrayBuffer());
     return {
@@ -1485,7 +1492,7 @@ export const api = {
   proxyTestStream: proxyTestStreamRequest,
   testChatStream: async (
     data: TestChatRequestPayload,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ) => {
     const token = getAuthToken(localStorage);
     if (!token) {
