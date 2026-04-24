@@ -5,7 +5,10 @@ import { tokenRouter } from '../../services/tokenRouter.js';
 import { reportProxyAllFailed } from '../../services/alertService.js';
 import { hasProxyUsagePayload, mergeProxyUsage, parseProxyUsage } from '../../services/proxyUsageParser.js';
 import { type DownstreamFormat } from '../../transformers/shared/normalized.js';
-import { promoteRequiredEndpointCandidateAfterProtocolError } from '../../transformers/shared/endpointCompatibility.js';
+import {
+  isEndpointDowngradeError,
+  promoteRequiredEndpointCandidateAfterProtocolError,
+} from '../../transformers/shared/endpointCompatibility.js';
 import { shouldForceResponsesUpstreamStream } from '../capabilities/responsesCompact.js';
 import {
   buildClaudeCountTokensUpstreamRequest,
@@ -90,6 +93,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function asTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function isClaudeCountTokensCompatibilityUnsupported(status: number | null, rawErrorText?: string | null): boolean {
+  if (status === null) return false;
+  return isEndpointDowngradeError(status, rawErrorText);
 }
 
 function finalizeRetryAsUpstreamFailure(status: number, message: string) {
@@ -1387,6 +1395,26 @@ export async function handleClaudeCountTokensSurfaceRequest(
         selected,
       });
       const endpointFailureStatus = typeof error?.status === 'number' ? error.status : null;
+      const rawErrorText = asTrimmedString(error?.rawErrText) || asTrimmedString(error?.message);
+      if (isClaudeCountTokensCompatibilityUnsupported(endpointFailureStatus, rawErrorText)) {
+        const payload = {
+          error: {
+            message: 'Claude count_tokens compatibility is not implemented for this upstream',
+            type: 'invalid_request_error' as const,
+          },
+        };
+        await failureToolkit.log({
+          selected,
+          modelRequested: requestedModel,
+          status: 'failed',
+          httpStatus: 501,
+          latencyMs: Date.now() - startTime,
+          errorMessage: rawErrorText || payload.error.message,
+          retryCount,
+        });
+        await finalizeDebugFailure(501, payload, null);
+        return reply.code(501).send(payload);
+      }
       const isSiteApiEndpointFailure = (
         error instanceof SiteApiEndpointRequestError
         || error?.name === 'SiteApiEndpointRequestError'

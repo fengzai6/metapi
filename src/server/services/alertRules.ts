@@ -20,6 +20,15 @@ function containsHttpStatus(message: string | null | undefined, status: number):
   return new RegExp(`(?:^|\\b)(?:http\\s*)?${status}(?:\\b|:)`, 'i').test(message);
 }
 
+function hasStandaloneTokenPhrase(message: string): boolean {
+  return (
+    /\btoken\b/i.test(message)
+    || /\baccess\s+token\b/i.test(message)
+    || message.includes('令牌')
+    || message.includes('访问令牌')
+  );
+}
+
 export function isTokenExpiredError(input: { status?: number; message?: string | null }): boolean {
   const rawMessage = input.message || '';
   const text = (input.message || '').toLowerCase();
@@ -31,7 +40,7 @@ export function isTokenExpiredError(input: { status?: number; message?: string |
   // which does not always mean the account token is expired.
   if (text.includes('未登录且未提供 access token')) return false;
 
-  const tokenPhrase = text.includes('token') || text.includes('令牌') || text.includes('访问令牌');
+  const tokenPhrase = hasStandaloneTokenPhrase(text);
   const hasInvalid = text.includes('invalid') || text.includes('无效');
   const hasExpired = text.includes('expired') || text.includes('过期');
 
