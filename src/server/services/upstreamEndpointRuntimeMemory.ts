@@ -117,11 +117,7 @@ export function buildEndpointCapabilityProfile(input?: {
 }
 
 function shouldUseEndpointRuntimeMemory(capabilityProfile: EndpointCapabilityProfile): boolean {
-  return (
-    !capabilityProfile.hasImageInput
-    && !capabilityProfile.hasAudioInput
-    && !capabilityProfile.hasNonImageFileInput
-  );
+  return true;
 }
 
 function buildEndpointRuntimeStateKey(input: {
@@ -134,6 +130,8 @@ function buildEndpointRuntimeStateKey(input: {
     String(input.siteId),
     input.downstreamFormat,
     capabilityProfile.modelKey,
+    capabilityProfile.hasImageInput ? 'image' : 'noimage',
+    capabilityProfile.hasAudioInput ? 'audio' : 'noaudio',
     capabilityProfile.hasNonImageFileInput ? 'files' : 'nofiles',
     capabilityProfile.hasRemoteDocumentUrl ? 'remoteurl' : 'noremoteurl',
     capabilityProfile.wantsNativeResponsesReasoning ? 'reasoning' : 'noreasoning',
@@ -233,8 +231,7 @@ function shouldRememberSuccessfulEndpoint(input: {
   endpoint: UpstreamEndpointRuntimeEndpoint;
   downstreamFormat: UpstreamEndpointRuntimePreference;
 }): boolean {
-  if (input.downstreamFormat !== 'responses') return true;
-  return input.endpoint === 'responses';
+  return true;
 }
 
 export function getUpstreamEndpointRuntimeStateSnapshot(input: {

@@ -291,7 +291,7 @@ describe('resolveUpstreamEndpointCandidates', () => {
     expect(order).toEqual(['responses', 'messages', 'chat']);
   });
 
-  it('does not apply runtime endpoint memory to image attachments', async () => {
+  it('remembers the last successful endpoint for image attachments within the same capability bucket', async () => {
     recordUpstreamEndpointSuccess({
       siteId: baseContext.site.id,
       endpoint: 'responses',
@@ -325,10 +325,10 @@ describe('resolveUpstreamEndpointCandidates', () => {
       },
     );
 
-    expect(order).toEqual(['chat', 'messages', 'responses']);
+    expect(order).toEqual(['responses', 'chat', 'messages']);
   });
 
-  it('does not expose preferred endpoint in snapshot when runtime memory is disabled for multimodal requests', () => {
+  it('keeps image attachment runtime preference isolated from plain text requests', async () => {
     recordUpstreamEndpointSuccess({
       siteId: baseContext.site.id,
       endpoint: 'responses',
@@ -344,11 +344,15 @@ describe('resolveUpstreamEndpointCandidates', () => {
       },
     });
 
-    expect(getUpstreamEndpointRuntimeStateSnapshot({
-      siteId: baseContext.site.id,
-      downstreamFormat: 'openai',
-      modelName: 'gpt-5.3',
-      requestCapabilities: {
+    const imageOrder = await resolveUpstreamEndpointCandidates(
+      {
+        ...baseContext,
+        site: { ...baseContext.site, platform: 'new-api' },
+      },
+      'gpt-5.3',
+      'openai',
+      undefined,
+      {
         conversationFileSummary: {
           hasImage: true,
           hasAudio: false,
@@ -356,11 +360,18 @@ describe('resolveUpstreamEndpointCandidates', () => {
           hasRemoteDocumentUrl: false,
         },
       },
-    })).toMatchObject({
-      enabled: false,
-      preferredEndpoint: null,
-      blockedEndpoints: [],
-    });
+    );
+    const textOrder = await resolveUpstreamEndpointCandidates(
+      {
+        ...baseContext,
+        site: { ...baseContext.site, platform: 'new-api' },
+      },
+      'gpt-5.3',
+      'openai',
+    );
+
+    expect(imageOrder).toEqual(['responses', 'chat', 'messages']);
+    expect(textOrder).toEqual(['chat', 'messages', 'responses']);
   });
 
   it('does not expose expired preferred endpoints in the runtime snapshot', () => {
@@ -386,7 +397,7 @@ describe('resolveUpstreamEndpointCandidates', () => {
     });
   });
 
-  it('does not apply runtime endpoint memory to document attachments', async () => {
+  it('remembers the last successful endpoint for document attachments within the same capability bucket', async () => {
     recordUpstreamEndpointSuccess({
       siteId: baseContext.site.id,
       endpoint: 'messages',
@@ -422,7 +433,7 @@ describe('resolveUpstreamEndpointCandidates', () => {
       },
     );
 
-    expect(order).toEqual(['responses', 'messages', 'chat']);
+    expect(order).toEqual(['messages', 'responses', 'chat']);
   });
 
   it('remembers the last successful endpoint per site capability profile', async () => {
@@ -528,14 +539,18 @@ describe('resolveUpstreamEndpointCandidates', () => {
     expect(order).toEqual(['responses']);
   });
 
-  it('does not remember messages fallback success for generic /v1/responses requests', async () => {
+  it('remembers fallback success for generic /v1/responses requests', async () => {
     const memoryWrite = recordUpstreamEndpointSuccess({
       siteId: baseContext.site.id,
       endpoint: 'messages',
       downstreamFormat: 'responses',
       modelName: 'gpt-5.3',
     });
-    expect(memoryWrite).toBeNull();
+    expect(memoryWrite).toMatchObject({
+      action: 'success',
+      endpoint: 'messages',
+      preferredEndpoint: 'messages',
+    });
 
     const order = await resolveUpstreamEndpointCandidates(
       {
@@ -546,7 +561,7 @@ describe('resolveUpstreamEndpointCandidates', () => {
       'responses',
     );
 
-    expect(order).toEqual(['responses', 'chat', 'messages']);
+    expect(order).toEqual(['messages', 'responses', 'chat']);
   });
 
   it('returns the applied success write when runtime memory stores a preferred endpoint', () => {
