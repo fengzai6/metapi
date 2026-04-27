@@ -47,7 +47,7 @@ export async function embeddingsProxyRoute(app: FastifyInstance) {
       headers: request.headers as Record<string, unknown>,
       body,
     });
-    const firstByteTimeoutMs = Math.max(0, Math.trunc((config.proxyFirstByteTimeoutSec || 0) * 1000));
+    const firstByteTimeoutMs = 0;
 
     const excludeChannelIds: number[] = [];
     let retryCount = 0;

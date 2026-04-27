@@ -685,7 +685,7 @@ export async function handleOpenAiResponsesSurfaceRequest(
         return executeEndpointFlow({
           siteUrl: siteApiBaseUrl,
           disableCrossProtocolFallback: isCompactRequest || config.disableCrossProtocolFallback,
-          firstByteTimeoutMs: Math.max(0, Math.trunc((config.proxyFirstByteTimeoutSec || 0) * 1000)),
+          firstByteTimeoutMs: isStream ? Math.max(0, Math.trunc((config.proxyFirstByteTimeoutSec || 0) * 1000)) : 0,
           endpointCandidates,
           buildRequest: (endpoint) => buildEndpointRequest(endpoint),
           dispatchRequest,

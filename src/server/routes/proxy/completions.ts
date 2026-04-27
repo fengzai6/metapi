@@ -50,7 +50,7 @@ export async function completionsProxyRoute(app: FastifyInstance) {
     });
 
     const isStream = body.stream === true;
-    const firstByteTimeoutMs = Math.max(0, Math.trunc((config.proxyFirstByteTimeoutSec || 0) * 1000));
+    const firstByteTimeoutMs = isStream ? Math.max(0, Math.trunc((config.proxyFirstByteTimeoutSec || 0) * 1000)) : 0;
     const excludeChannelIds: number[] = [];
     let retryCount = 0;
 

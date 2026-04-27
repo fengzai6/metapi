@@ -616,7 +616,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
       const isInternalGemini = isInternalGeminiPlatform(selected.site.platform);
       const isDirectGeminiFamily = isDirectGeminiFamilyPlatform(selected.site.platform);
       const startTime = Date.now();
-      const firstByteTimeoutMs = Math.max(0, Math.trunc((config.proxyFirstByteTimeoutSec || 0) * 1000));
+      const firstByteTimeoutMs = isStreamAction ? Math.max(0, Math.trunc((config.proxyFirstByteTimeoutSec || 0) * 1000)) : 0;
       let upstreamPath = '';
 
       try {
