@@ -414,8 +414,7 @@ function buildProjectionBatchDelta(rows: ProxyLogProjectionRow[]): ProjectionBat
   const modelDayMap = new Map<string, ModelDayUsageDeltaRow>();
 
   for (const row of rows) {
-    const siteId = typeof row.siteId === 'number' && row.siteId > 0 ? row.siteId : null;
-    if (!siteId) continue;
+    const siteId = typeof row.siteId === 'number' && row.siteId > 0 ? row.siteId : 0;
 
     const localDay = toLocalDayKeyFromStoredUtc(row.createdAt);
     const bucketStartUtc = toLocalHourStartUtcFromStoredUtc(row.createdAt);
