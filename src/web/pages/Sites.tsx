@@ -314,7 +314,6 @@ export default function Sites() {
   const [disabledModels, setDisabledModels] = useState<string[]>([]);
   const [disabledModelInput, setDisabledModelInput] = useState('');
   const [disabledModelsLoading, setDisabledModelsLoading] = useState(false);
-  const [disabledModelsSaving, setDisabledModelsSaving] = useState(false);
   const [probeEnabled, setProbeEnabled] = useState(false);
   const [probeModel, setProbeModel] = useState('');
   const [probeScope, setProbeScope] = useState<'single' | 'all'>('single');
@@ -1703,14 +1702,6 @@ export default function Sites() {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-                      <button
-                        onClick={handleSaveDisabledModels}
-                        disabled={disabledModelsSaving}
-                        className="btn btn-primary"
-                        style={{ fontSize: 12, padding: '6px 16px' }}
-                      >
-                        {disabledModelsSaving ? <><span className="spinner spinner-sm" style={{ borderTopColor: 'white', borderColor: 'rgba(255,255,255,0.3)' }} /> 保存中...</> : '保存禁用列表'}
-                      </button>
                       <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                         已禁用 {disabledModels.length} 个模型
                       </span>
