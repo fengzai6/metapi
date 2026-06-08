@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prettier *)",
+      "mcp__codegraph__codegraph_explore",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

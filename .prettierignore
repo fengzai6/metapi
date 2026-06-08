@@ -1,0 +1,9 @@
+dist/
+release/
+data/
+node_modules/
+*.log
+*.tar.gz
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+drizzle/
