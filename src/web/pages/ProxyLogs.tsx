@@ -347,6 +347,26 @@ function formatProxyLogTokenValue(value: number | null | undefined): string {
   return typeof value === "number" ? value.toLocaleString() : "--";
 }
 
+function resolveProxyLogInputTokens(log: ProxyLogRenderItem) {
+  const usage = log.billingDetails?.usage;
+  if (usage) {
+    return (
+      usage.billablePromptTokens +
+      usage.cacheReadTokens +
+      usage.cacheCreationTokens
+    );
+  }
+
+  if (
+    typeof log.totalTokens === "number" &&
+    typeof log.completionTokens === "number"
+  ) {
+    return Math.max(0, log.totalTokens - log.completionTokens);
+  }
+
+  return log.promptTokens;
+}
+
 function renderDownstreamKeySummary(log: ProxyLogRenderItem) {
   const parts = [
     log.downstreamKeyName ? `下游 Key: ${log.downstreamKeyName}` : null,
@@ -2711,7 +2731,9 @@ export default function ProxyLogs() {
                     <div className="mobile-summary-metric">
                       <div className="mobile-summary-metric-label">输入</div>
                       <div className="mobile-summary-metric-value">
-                        {formatProxyLogTokenValue(log.promptTokens)}
+                        {formatProxyLogTokenValue(
+                          resolveProxyLogInputTokens(detailLog),
+                        )}
                       </div>
                     </div>
                     <div className="mobile-summary-metric">
@@ -3032,7 +3054,9 @@ export default function ProxyLogs() {
                           color: "var(--color-text-secondary)",
                         }}
                       >
-                        {formatProxyLogTokenValue(log.promptTokens)}
+                        {formatProxyLogTokenValue(
+                          resolveProxyLogInputTokens(detailLog),
+                        )}
                       </td>
                       <td
                         style={{
@@ -3351,7 +3375,7 @@ export default function ProxyLogs() {
                                     <span>
                                       输入{" "}
                                       {formatProxyLogTokenValue(
-                                        detailLog.promptTokens,
+                                        resolveProxyLogInputTokens(detailLog),
                                       )}{" "}
                                       tokens
                                       {" + "}输出{" "}

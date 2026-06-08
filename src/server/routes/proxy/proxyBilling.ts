@@ -1,1 +1,4 @@
-export { resolveProxyLogBilling } from '../../services/proxyBilling.js';
+export {
+  resolveProxyLogBilling,
+  resolveProxyLogTotalTokens,
+} from '../../services/proxyBilling.js';

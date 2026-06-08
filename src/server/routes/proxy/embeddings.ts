@@ -12,7 +12,7 @@ import { withSiteRecordProxyRequestInit } from '../../services/siteProxy.js';
 import { getProxyUrlFromExtraConfig } from '../../services/accountExtraConfig.js';
 import { composeProxyLogMessage } from '../../services/proxyLogMessage.js';
 import { formatUtcSqlDateTime } from '../../services/localTimeService.js';
-import { resolveProxyLogBilling } from './proxyBilling.js';
+import { resolveProxyLogBilling, resolveProxyLogTotalTokens } from './proxyBilling.js';
 import { getProxyAuthContext } from '../../middleware/auth.js';
 import { buildUpstreamUrl } from './upstreamUrl.js';
 import { detectDownstreamClientContext, type DownstreamClientContext } from '../../proxy-core/downstreamClientContext.js';
@@ -260,7 +260,7 @@ async function logProxy(
       latencyMs,
       promptTokens,
       completionTokens,
-      totalTokens,
+      totalTokens: resolveProxyLogTotalTokens({ billingDetails, fallbackTotalTokens: totalTokens }),
       estimatedCost,
       billingDetails,
       clientFamily: clientContext?.clientKind || null,
@@ -286,4 +286,3 @@ async function recordTokenRouterEventBestEffort(
     console.warn(`[proxy/embeddings] failed to ${label}`, error);
   }
 }
-

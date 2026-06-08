@@ -8,9 +8,30 @@ vi.mock('./modelPricingService.js', () => ({
   buildProxyBillingDetails: (...args: unknown[]) => buildProxyBillingDetailsMock(...args),
 }));
 
-import { resolveProxyLogBilling } from './proxyBilling.js';
+import { resolveProxyLogBilling, resolveProxyLogTotalTokens } from './proxyBilling.js';
 
 describe('resolveProxyLogBilling', () => {
+  it('calculates logged total tokens from billable prompt, cache, and completion tokens', () => {
+    expect(resolveProxyLogTotalTokens({
+      fallbackTotalTokens: 150,
+      billingDetails: {
+        usage: {
+          billablePromptTokens: 120,
+          cacheReadTokens: 1000,
+          cacheCreationTokens: 40,
+          completionTokens: 30,
+        },
+      },
+    })).toBe(1190);
+  });
+
+  it('falls back to resolved total tokens when billing details are missing', () => {
+    expect(resolveProxyLogTotalTokens({
+      fallbackTotalTokens: 150,
+      billingDetails: null,
+    })).toBe(150);
+  });
+
   it('uses self-log billing metadata for detail breakdown while preserving quota-derived total cost', async () => {
     estimateProxyCostMock.mockResolvedValue(0.010001);
     buildProxyBillingDetailsMock.mockResolvedValue({

@@ -100,6 +100,22 @@ vi.mock('../../services/proxyUsageFallbackService.js', () => ({
 
 vi.mock('../../services/proxyBilling.js', () => ({
   resolveProxyLogBilling: (...args: unknown[]) => resolveProxyLogBillingMock(...args),
+  resolveProxyLogTotalTokens: (input: { billingDetails?: unknown; fallbackTotalTokens?: number | null }) => {
+    const detail = input.billingDetails as {
+      usage?: {
+        billablePromptTokens?: number;
+        cacheReadTokens?: number;
+        cacheCreationTokens?: number;
+        completionTokens?: number;
+      };
+    } | null;
+    const usage = detail?.usage;
+    if (!usage) return input.fallbackTotalTokens ?? null;
+    return (usage.billablePromptTokens || 0)
+      + (usage.cacheReadTokens || 0)
+      + (usage.cacheCreationTokens || 0)
+      + (usage.completionTokens || 0);
+  },
 }));
 
 vi.mock('../../services/oauth/refreshSingleflight.js', () => ({
@@ -942,6 +958,9 @@ describe('selectSurfaceChannelForAttempt', () => {
         promptTokens: 10,
         completionTokens: 5,
         totalTokens: 15,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        promptTokensIncludeCache: null,
       },
       requestStartedAtMs: 1000,
       latencyMs: 250,
@@ -975,6 +994,9 @@ describe('selectSurfaceChannelForAttempt', () => {
         promptTokens: 10,
         completionTokens: 5,
         totalTokens: 15,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        promptTokensIncludeCache: null,
       },
       resolvedUsage: {
         promptTokens: 20,
@@ -1028,6 +1050,94 @@ describe('selectSurfaceChannelForAttempt', () => {
     });
   });
 
+  it('logs total tokens including cache tokens from billing details', async () => {
+    resolveProxyUsageWithSelfLogFallbackMock.mockResolvedValue({
+      promptTokens: 120,
+      completionTokens: 30,
+      totalTokens: 150,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      promptTokensIncludeCache: null,
+      recoveredFromSelfLog: false,
+      estimatedCostFromQuota: 0,
+      selfLogBillingMeta: null,
+      usageSource: 'upstream',
+    });
+    resolveProxyLogBillingMock.mockResolvedValue({
+      estimatedCost: 0.00372,
+      billingDetails: {
+        quotaType: 0,
+        usage: {
+          promptTokens: 120,
+          completionTokens: 30,
+          totalTokens: 150,
+          cacheReadTokens: 1000,
+          cacheCreationTokens: 40,
+          billablePromptTokens: 120,
+          promptTokensIncludeCache: false,
+        },
+        pricing: {
+          modelRatio: 3,
+          completionRatio: 5,
+          cacheRatio: 0.3,
+          cacheCreationRatio: 1.25,
+          groupRatio: 1,
+        },
+        breakdown: {
+          inputPerMillion: 6,
+          outputPerMillion: 30,
+          cacheReadPerMillion: 1.8,
+          cacheCreationPerMillion: 7.5,
+          inputCost: 0.00072,
+          outputCost: 0.0009,
+          cacheReadCost: 0.0018,
+          cacheCreationCost: 0.0003,
+          totalCost: 0.00372,
+        },
+      },
+    });
+    const logSuccess = vi.fn().mockResolvedValue(undefined);
+
+    const { recordSurfaceSuccess } = await import('./sharedSurface.js');
+    await recordSurfaceSuccess({
+      selected: {
+        channel: { id: 11, routeId: 22 },
+        account: { id: 33, username: 'oauth-user' },
+        site: { id: 44, url: 'https://upstream.example.com', platform: 'new-api', name: 'Upstream' },
+        tokenValue: 'live-token',
+        tokenName: 'default',
+        actualModel: 'upstream-model',
+      },
+      requestedModel: 'claude-opus-4-8',
+      modelName: 'upstream-model',
+      parsedUsage: {
+        promptTokens: 120,
+        completionTokens: 30,
+        totalTokens: 150,
+        cacheReadTokens: 1000,
+        cacheCreationTokens: 40,
+        promptTokensIncludeCache: false,
+      },
+      requestStartedAtMs: 1000,
+      latencyMs: 250,
+      retryCount: 0,
+      upstreamPath: '/v1/messages',
+      logSuccess,
+    });
+
+    expect(logSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      promptTokens: 120,
+      completionTokens: 30,
+      totalTokens: 1190,
+      billingDetails: expect.objectContaining({
+        usage: expect.objectContaining({
+          cacheReadTokens: 1000,
+          cacheCreationTokens: 40,
+        }),
+      }),
+    }));
+  });
+
   it('logs unknown usage as null tokens while preserving success bookkeeping', async () => {
     resolveProxyUsageWithSelfLogFallbackMock.mockResolvedValue({
       promptTokens: 0,
@@ -1060,6 +1170,9 @@ describe('selectSurfaceChannelForAttempt', () => {
         promptTokens: 0,
         completionTokens: 0,
         totalTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        promptTokensIncludeCache: null,
       },
       requestStartedAtMs: 1000,
       latencyMs: 250,
@@ -1112,6 +1225,9 @@ describe('selectSurfaceChannelForAttempt', () => {
         promptTokens: 10,
         completionTokens: 5,
         totalTokens: 15,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        promptTokensIncludeCache: null,
       },
       requestStartedAtMs: 1000,
       latencyMs: 250,
@@ -1153,6 +1269,9 @@ describe('selectSurfaceChannelForAttempt', () => {
         promptTokens: 10,
         completionTokens: 5,
         totalTokens: 15,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        promptTokensIncludeCache: null,
       },
       requestStartedAtMs: 1000,
       latencyMs: 250,

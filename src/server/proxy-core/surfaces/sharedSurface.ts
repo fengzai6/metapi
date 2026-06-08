@@ -8,7 +8,7 @@ import { reportProxyAllFailed, reportTokenExpired } from '../../services/alertSe
 import { isTokenExpiredError } from '../../services/alertRules.js';
 import { shouldRetryProxyRequest } from '../../services/proxyRetryPolicy.js';
 import { composeProxyLogMessage } from '../../services/proxyLogMessage.js';
-import { resolveProxyLogBilling } from '../../services/proxyBilling.js';
+import { resolveProxyLogBilling, resolveProxyLogTotalTokens } from '../../services/proxyBilling.js';
 import type { DownstreamClientContext } from '../downstreamClientContext.js';
 import { insertProxyLog } from '../../services/proxyLogStore.js';
 import { dispatchRuntimeRequest } from '../../services/runtimeDispatch.js';
@@ -513,7 +513,10 @@ export async function recordSurfaceSuccess(input: {
     : {
       promptTokens: resolvedUsage.promptTokens,
       completionTokens: resolvedUsage.completionTokens,
-      totalTokens: resolvedUsage.totalTokens,
+      totalTokens: resolveProxyLogTotalTokens({
+        billingDetails,
+        fallbackTotalTokens: resolvedUsage.totalTokens,
+      }),
     };
   await input.logSuccess({
     selected: input.selected,

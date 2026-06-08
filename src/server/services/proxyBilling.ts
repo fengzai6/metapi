@@ -52,6 +52,34 @@ function toPricingOverride(meta: SelfLogBillingMeta | null): ProxyBillingPricing
   };
 }
 
+function toPositiveInt(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.round(n));
+}
+
+export function resolveProxyLogTotalTokens(input: {
+  billingDetails?: unknown;
+  fallbackTotalTokens?: number | null;
+}): number | null {
+  const fallback = typeof input.fallbackTotalTokens === 'number'
+    && Number.isFinite(input.fallbackTotalTokens)
+    ? Math.max(0, Math.round(input.fallbackTotalTokens))
+    : null;
+  const detail = input.billingDetails;
+  if (!detail || typeof detail !== 'object') return fallback;
+
+  const usage = (detail as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== 'object') return fallback;
+
+  const usageRecord = usage as Record<string, unknown>;
+  const totalTokens = toPositiveInt(usageRecord.billablePromptTokens)
+    + toPositiveInt(usageRecord.cacheReadTokens)
+    + toPositiveInt(usageRecord.cacheCreationTokens)
+    + toPositiveInt(usageRecord.completionTokens);
+  return totalTokens > 0 ? totalTokens : fallback;
+}
+
 export async function resolveProxyLogBilling(
   input: ResolveProxyLogBillingInput,
 ): Promise<{ estimatedCost: number; billingDetails: ProxyBillingDetails | null }> {
