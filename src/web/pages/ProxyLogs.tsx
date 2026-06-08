@@ -431,6 +431,41 @@ function formatDateTimeInputValue(value: Date) {
   return `${value.getFullYear()}-${padDateTimeSegment(value.getMonth() + 1)}-${padDateTimeSegment(value.getDate())}T${padDateTimeSegment(value.getHours())}:${padDateTimeSegment(value.getMinutes())}`;
 }
 
+function getLocalDayStart(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function addLocalDays(value: Date, days: number) {
+  const next = new Date(value);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function buildProxyLogTimeRangePresets(now = new Date()) {
+  const todayStart = getLocalDayStart(now);
+  const tomorrowStart = addLocalDays(todayStart, 1);
+  return [
+    {
+      key: "today",
+      label: "当日",
+      from: formatDateTimeInputValue(todayStart),
+      to: formatDateTimeInputValue(tomorrowStart),
+    },
+    {
+      key: "last7Days",
+      label: "最近一周",
+      from: formatDateTimeInputValue(addLocalDays(todayStart, -6)),
+      to: formatDateTimeInputValue(tomorrowStart),
+    },
+    {
+      key: "last30Days",
+      label: "最近一个月",
+      from: formatDateTimeInputValue(addLocalDays(todayStart, -29)),
+      to: formatDateTimeInputValue(tomorrowStart),
+    },
+  ];
+}
+
 function normalizeRoutePage(raw: string | null): number {
   const parsed = Number.parseInt(raw || "", 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return 1;
@@ -976,6 +1011,7 @@ export default function ProxyLogs() {
         ?.label || `站点 #${siteFilter}`
     );
   }, [siteFilter, siteOptions]);
+  const timeRangePresets = buildProxyLogTimeRangePresets();
   const siteIdByName = useMemo(() => {
     const index = new Map<string, number>();
     for (const site of sites) {
@@ -1724,30 +1760,53 @@ export default function ProxyLogs() {
           placeholder="全部站点"
         />
       </div>
-      <label className="proxy-logs-time-field">
-        <span>开始</span>
-        <input
-          type="datetime-local"
-          value={fromInput}
-          max={toInput || undefined}
-          onChange={(e) => {
-            setFromInput(e.target.value);
-            setPage(1);
-          }}
-        />
-      </label>
-      <label className="proxy-logs-time-field">
-        <span>结束</span>
-        <input
-          type="datetime-local"
-          value={toInput}
-          min={fromInput || undefined}
-          onChange={(e) => {
-            setToInput(e.target.value);
-            setPage(1);
-          }}
-        />
-      </label>
+      <div className="proxy-logs-time-filter">
+        <div className="proxy-logs-time-inputs">
+          <label className="proxy-logs-time-field">
+            <span>开始</span>
+            <input
+              type="datetime-local"
+              value={fromInput}
+              max={toInput || undefined}
+              onChange={(e) => {
+                setFromInput(e.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+          <label className="proxy-logs-time-field">
+            <span>结束</span>
+            <input
+              type="datetime-local"
+              value={toInput}
+              min={fromInput || undefined}
+              onChange={(e) => {
+                setToInput(e.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+        </div>
+        <div className="proxy-logs-time-presets" aria-label="快捷时间范围">
+          {timeRangePresets.map((preset) => {
+            const active = fromInput === preset.from && toInput === preset.to;
+            return (
+              <button
+                key={preset.key}
+                type="button"
+                className={`btn btn-ghost ${active ? "btn-ghost-active" : ""}`}
+                onClick={() => {
+                  setFromInput(preset.from);
+                  setToInput(preset.to);
+                  setPage(1);
+                }}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <div className="toolbar-search" style={{ maxWidth: 280 }}>
         <svg
           width="14"

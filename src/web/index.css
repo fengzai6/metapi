@@ -5501,6 +5501,27 @@ textarea {
   min-width: 180px;
 }
 
+.proxy-logs-time-filter {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.proxy-logs-time-filter::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 8px;
+}
+
+.proxy-logs-time-inputs {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .proxy-logs-time-field {
   display: inline-flex;
   align-items: center;
@@ -5527,6 +5548,39 @@ textarea {
 .proxy-logs-time-field input:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.proxy-logs-time-presets {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 90;
+  min-width: 100%;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.proxy-logs-time-filter:hover .proxy-logs-time-presets,
+.proxy-logs-time-filter:focus-within .proxy-logs-time-presets {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.proxy-logs-time-presets .btn {
+  padding: 8px 10px;
+  white-space: nowrap;
 }
 
 .proxy-logs-filter-reset {
@@ -6530,9 +6584,23 @@ textarea {
   }
 
   .proxy-logs-filter-select,
+  .proxy-logs-time-filter,
   .proxy-logs-time-field,
+  .proxy-logs-time-presets,
   .proxy-logs-filter-reset {
     width: 100%;
+  }
+
+  .proxy-logs-time-filter,
+  .proxy-logs-time-inputs {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .proxy-logs-time-filter::after {
+    display: none;
   }
 
   .proxy-logs-time-field {
@@ -6545,6 +6613,18 @@ textarea {
   .proxy-logs-time-field input {
     width: 100%;
     min-width: 0;
+  }
+
+  .proxy-logs-time-presets {
+    position: static;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .proxy-logs-time-presets .btn {
+    flex: 1 1 96px;
   }
 }
 
