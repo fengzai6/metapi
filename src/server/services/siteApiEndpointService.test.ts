@@ -205,7 +205,7 @@ describe('siteApiEndpointService', () => {
     expect(selected).toBeNull();
   });
 
-  it('records retryable failures with a 5-minute cooldown', async () => {
+  it('records retryable failures with a 3-minute cooldown', async () => {
     const site = await db.insert(schema.sites).values({
       name: 'retryable-site',
       url: 'https://panel.example.com',
@@ -228,7 +228,7 @@ describe('siteApiEndpointService', () => {
     expect(result).toMatchObject({
       retryable: true,
       rotateToNextEndpoint: true,
-      cooldownUntil: '2026-03-31T12:05:00.000Z',
+      cooldownUntil: '2026-03-31T12:03:00.000Z',
       failureReason: 'HTTP 502: Bad gateway',
     });
 
@@ -236,7 +236,7 @@ describe('siteApiEndpointService', () => {
       .where(eq(schema.siteApiEndpoints.id, endpoint.id))
       .get();
     expect(stored).toMatchObject({
-      cooldownUntil: '2026-03-31T12:05:00.000Z',
+      cooldownUntil: '2026-03-31T12:03:00.000Z',
       lastFailedAt: '2026-03-31T12:00:00.000Z',
       lastFailureReason: 'HTTP 502: Bad gateway',
     });
@@ -264,7 +264,7 @@ describe('siteApiEndpointService', () => {
     expect(result).toMatchObject({
       retryable: true,
       rotateToNextEndpoint: true,
-      cooldownUntil: '2026-03-31T12:05:00.000Z',
+      cooldownUntil: '2026-03-31T12:03:00.000Z',
       failureReason: 'HTTP 502: upstream temporarily unavailable',
     });
   });

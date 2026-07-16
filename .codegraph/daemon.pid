@@ -1,6 +1,6 @@
 {
-  "pid": 89795,
-  "version": "0.9.9",
+  "pid": 55720,
+  "version": "1.4.1",
   "socketPath": "/Users/nacho/Documents/GitHub/metapi/.codegraph/daemon.sock",
-  "startedAt": 1780531085395
+  "startedAt": 1784160217347
 }

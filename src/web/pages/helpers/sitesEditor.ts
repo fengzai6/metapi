@@ -4,6 +4,7 @@ export type SiteCustomHeaderField = {
 };
 
 export type SiteApiEndpointField = {
+  id?: number;
   draftId?: string;
   url: string;
   enabled: boolean;
@@ -122,6 +123,7 @@ function parseApiEndpointsForEditor(raw: unknown): SiteApiEndpointField[] {
     if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
     const row = item as Record<string, unknown>;
     rows.push({
+      id: typeof row.id === 'number' ? row.id : undefined,
       url: typeof row.url === 'string' ? row.url : '',
       enabled: row.enabled !== false,
       cooldownUntil: typeof row.cooldownUntil === 'string' ? row.cooldownUntil : null,
@@ -136,6 +138,7 @@ export function siteFormFromSite(site: Partial<Omit<SiteForm, 'apiEndpoints' | '
   proxyUrl?: string | null;
   useSystemProxy?: boolean | null;
   apiEndpoints?: Array<{
+    id?: number | null;
     url?: string | null;
     enabled?: boolean | null;
     cooldownUntil?: string | null;

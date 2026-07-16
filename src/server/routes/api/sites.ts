@@ -16,7 +16,7 @@ import {
   parseSiteUpdatePayload,
 } from '../../contracts/siteRoutePayloads.js';
 import { getSiteInitializationPreset } from '../../../shared/siteInitializationPresets.js';
-import { normalizeSiteApiEndpointBaseUrl } from '../../services/siteApiEndpointService.js';
+import { clearSiteApiEndpointCooldown, normalizeSiteApiEndpointBaseUrl } from '../../services/siteApiEndpointService.js';
 import { analyzePrimarySiteUrl } from '../../../shared/sitePrimaryUrl.js';
 import { probeSiteModels } from '../../services/modelService.js';
 
@@ -739,6 +739,31 @@ export async function sitesRoutes(app: FastifyInstance) {
     invalidateSiteCaches();
     return { success: true };
   });
+
+  app.post<{ Params: { siteId: string; endpointId: string } }>(
+    '/api/sites/:siteId/api-endpoints/:endpointId/cooldown/clear',
+    async (request, reply) => {
+      const siteId = parseInt(request.params.siteId, 10);
+      const endpointId = parseInt(request.params.endpointId, 10);
+      if (!Number.isFinite(siteId) || !Number.isFinite(endpointId)) {
+        return reply.code(400).send({ error: 'Invalid site api endpoint id' });
+      }
+
+      const endpoint = await clearSiteApiEndpointCooldown(siteId, endpointId);
+      if (!endpoint) {
+        return reply.code(404).send({ error: 'Site api endpoint not found' });
+      }
+
+      invalidateSiteCaches();
+      return {
+        success: true,
+        endpoint: {
+          ...endpoint,
+          url: normalizeSiteApiEndpointBaseUrl(endpoint.url),
+        },
+      };
+    },
+  );
 
   app.post<{ Body: unknown }>('/api/sites/batch', async (request, reply) => {
     const parsedBody = parseSiteBatchPayload(request.body);

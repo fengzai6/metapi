@@ -775,6 +775,8 @@ export const api = {
   updateSite: (id: number, data: any) =>
     request(`/api/sites/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteSite: (id: number) => request(`/api/sites/${id}`, { method: "DELETE" }),
+  clearSiteApiEndpointCooldown: (siteId: number, endpointId: number) =>
+    request(`/api/sites/${siteId}/api-endpoints/${endpointId}/cooldown/clear`, { method: "POST" }),
   batchUpdateSites: (data: any) =>
     request("/api/sites/batch", { method: "POST", body: JSON.stringify(data) }),
   detectSite: (url: string) =>

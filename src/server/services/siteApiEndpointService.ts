@@ -1,12 +1,15 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { RETRYABLE_TIMEOUT_PATTERNS } from './proxyRetryPolicy.js';
 
 const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
 const NON_RETRYABLE_STATUS_CODES = new Set([400, 401, 403, 404, 422]);
+const TRANSIENT_TRANSPORT_FAILURE_PATTERNS = [
+  /fetch failed/i,
+  /\bterminated\b/i,
+];
 const NETWORK_FAILURE_PATTERNS = [
   /network error/i,
-  /fetch failed/i,
   /socket hang up/i,
   /econnreset/i,
   /econnrefused/i,
@@ -16,7 +19,7 @@ const NETWORK_FAILURE_PATTERNS = [
   ...RETRYABLE_TIMEOUT_PATTERNS,
 ];
 
-export const SITE_API_ENDPOINT_COOLDOWN_MS = 5 * 60 * 1000;
+export const SITE_API_ENDPOINT_COOLDOWN_MS = 3 * 60 * 1000;
 
 type SiteRow = typeof schema.sites.$inferSelect;
 type SiteApiEndpointRow = typeof schema.siteApiEndpoints.$inferSelect;
@@ -39,6 +42,7 @@ export interface SiteApiEndpointFailureInput {
 export interface SiteApiEndpointFailureDisposition {
   retryable: boolean;
   rotateToNextEndpoint: boolean;
+  cooldown: boolean;
   failureReason: string;
 }
 
@@ -133,20 +137,24 @@ export function classifySiteApiEndpointFailure(
     : parseStatusFromFailureMessage(message);
   const failureReason = formatFailureReason(status, message);
 
+  if (status === null && TRANSIENT_TRANSPORT_FAILURE_PATTERNS.some((pattern) => pattern.test(message))) {
+    return { retryable: true, rotateToNextEndpoint: true, cooldown: false, failureReason };
+  }
+
   if (status !== null) {
     if (RETRYABLE_STATUS_CODES.has(status)) {
-      return { retryable: true, rotateToNextEndpoint: true, failureReason };
+      return { retryable: true, rotateToNextEndpoint: true, cooldown: true, failureReason };
     }
     if (NON_RETRYABLE_STATUS_CODES.has(status)) {
-      return { retryable: false, rotateToNextEndpoint: false, failureReason };
+      return { retryable: false, rotateToNextEndpoint: false, cooldown: false, failureReason };
     }
   }
 
   if (NETWORK_FAILURE_PATTERNS.some((pattern) => pattern.test(message))) {
-    return { retryable: true, rotateToNextEndpoint: true, failureReason };
+    return { retryable: true, rotateToNextEndpoint: true, cooldown: true, failureReason };
   }
 
-  return { retryable: false, rotateToNextEndpoint: false, failureReason };
+  return { retryable: false, rotateToNextEndpoint: false, cooldown: false, failureReason };
 }
 
 export async function selectSiteApiEndpointTarget(
@@ -217,7 +225,7 @@ export async function recordSiteApiEndpointFailure(
 ): Promise<RecordedSiteApiEndpointFailure> {
   const nowIso = toIsoTimestamp(now);
   const disposition = classifySiteApiEndpointFailure(input);
-  const cooldownUntil = disposition.retryable
+  const cooldownUntil = disposition.cooldown
     ? new Date(Date.parse(nowIso) + SITE_API_ENDPOINT_COOLDOWN_MS).toISOString()
     : null;
 
@@ -232,6 +240,30 @@ export async function recordSiteApiEndpointFailure(
     ...disposition,
     cooldownUntil,
   };
+}
+
+export async function clearSiteApiEndpointCooldown(
+  siteId: number,
+  endpointId: number,
+  now?: string | Date,
+): Promise<SiteApiEndpointRow | null> {
+  const existing = await db.select().from(schema.siteApiEndpoints)
+    .where(and(
+      eq(schema.siteApiEndpoints.siteId, siteId),
+      eq(schema.siteApiEndpoints.id, endpointId),
+    ))
+    .get();
+  if (!existing) return null;
+
+  await db.update(schema.siteApiEndpoints).set({
+    cooldownUntil: null,
+    updatedAt: toIsoTimestamp(now),
+  }).where(eq(schema.siteApiEndpoints.id, endpointId)).run();
+
+  const updated = await db.select().from(schema.siteApiEndpoints)
+    .where(eq(schema.siteApiEndpoints.id, endpointId))
+    .get();
+  return updated || null;
 }
 
 export async function recordSiteApiEndpointSuccess(

@@ -288,6 +288,7 @@ export default function Sites() {
   const [togglingSiteId, setTogglingSiteId] = useState<number | null>(null);
   const [orderingSiteId, setOrderingSiteId] = useState<number | null>(null);
   const [pinningSiteId, setPinningSiteId] = useState<number | null>(null);
+  const [clearingApiEndpointCooldownId, setClearingApiEndpointCooldownId] = useState<number | null>(null);
   const [selectedSiteIds, setSelectedSiteIds] = useState<number[]>([]);
   const [expandedSiteIds, setExpandedSiteIds] = useState<number[]>([]);
   const [createdSiteForChoice, setCreatedSiteForChoice] = useState<{
@@ -889,6 +890,49 @@ export default function Sites() {
     });
   };
 
+  const handleClearApiEndpointCooldown = async (endpoint: SiteApiEndpointField) => {
+    if (!editor || editor.mode !== 'edit' || !endpoint.id) return;
+    const endpointId = endpoint.id;
+    setClearingApiEndpointCooldownId(endpointId);
+    try {
+      const result = await api.clearSiteApiEndpointCooldown(editor.editingSiteId, endpointId);
+      const updatedEndpoint = result?.endpoint || null;
+      setForm((prev) => ({
+        ...prev,
+        apiEndpoints: prev.apiEndpoints.map((item) => (
+          item.id === endpointId
+            ? {
+              ...item,
+              cooldownUntil: typeof updatedEndpoint?.cooldownUntil === 'string' ? updatedEndpoint.cooldownUntil : null,
+              lastFailureReason: typeof updatedEndpoint?.lastFailureReason === 'string' ? updatedEndpoint.lastFailureReason : item.lastFailureReason,
+            }
+            : item
+        )),
+      }));
+      setSites((prev) => prev.map((site) => (
+        site.id === editor.editingSiteId
+          ? {
+            ...site,
+            apiEndpoints: site.apiEndpoints?.map((item) => (
+              item.id === endpointId
+                ? {
+                  ...item,
+                  cooldownUntil: null,
+                  lastFailureReason: typeof updatedEndpoint?.lastFailureReason === 'string' ? updatedEndpoint.lastFailureReason : item.lastFailureReason,
+                }
+                : item
+            )),
+          }
+          : site
+      )));
+      toast.success('API 请求地址冷却已清除');
+    } catch (e: any) {
+      toast.error(e.message || '清除冷却失败');
+    } finally {
+      setClearingApiEndpointCooldownId(null);
+    }
+  };
+
   /**
    * 从站点页进入账号/API Key 连接创建流程。
    */
@@ -1486,7 +1530,22 @@ export default function Sites() {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 11, color: 'var(--color-text-muted)' }}>
                     <span>顺序 #{index + 1}</span>
-                    {endpoint.cooldownUntil ? <span>冷却至 {formatDateTimeLocal(endpoint.cooldownUntil)}</span> : null}
+                    {endpoint.cooldownUntil ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span>冷却至 {formatDateTimeLocal(endpoint.cooldownUntil)}</span>
+                        {endpoint.id ? (
+                          <button
+                            type="button"
+                            onClick={() => handleClearApiEndpointCooldown(endpoint)}
+                            disabled={clearingApiEndpointCooldownId === endpoint.id}
+                            className="btn btn-link btn-link-muted"
+                            style={{ fontSize: 11, padding: 0, minHeight: 0 }}
+                          >
+                            {clearingApiEndpointCooldownId === endpoint.id ? '清除中...' : '清除'}
+                          </button>
+                        ) : null}
+                      </span>
+                    ) : null}
                     {endpoint.lastFailureReason ? <span>最近失败: {endpoint.lastFailureReason}</span> : null}
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
