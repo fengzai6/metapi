@@ -52,13 +52,16 @@ export function buildVisibleRouteList<T extends RouteListVisibilityItem>(
     const exactModel = (route.modelPattern || '').trim();
     if (!exactModel) return true;
 
-    return !coveringGroups.some((groupRoute) => (
-      groupRoute.id !== route.id
-      && !exactModelNames.has((groupRoute.displayName || '').trim())
-      && (
-        (isExplicitGroupRoute(groupRoute) && (groupRoute.sourceRouteIds || []).includes(route.id))
-        || (!isExplicitGroupRoute(groupRoute) && matchesModelPattern(exactModel, groupRoute.modelPattern))
-      )
-    ));
+    return !coveringGroups.some((groupRoute) => {
+      if (groupRoute.id === route.id) return false;
+      if (exactModelNames.has((groupRoute.displayName || '').trim())) return false;
+      if (isExplicitGroupRoute(groupRoute)) {
+        const sourceRouteIds = groupRoute.sourceRouteIds || [];
+        // Single-source groups keep the only exact source route visible for direct channel management.
+        if (sourceRouteIds.length <= 1) return false;
+        return sourceRouteIds.includes(route.id);
+      }
+      return matchesModelPattern(exactModel, groupRoute.modelPattern);
+    });
   });
 }

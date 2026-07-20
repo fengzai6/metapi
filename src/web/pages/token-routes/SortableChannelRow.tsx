@@ -45,6 +45,7 @@ export function SortableChannelRow({
 }: SortableChannelRowProps) {
   const resolvedPriority = displayPriority ?? channel.priority ?? 0;
   const managementLocked = readOnly || channelManagementDisabled;
+  const enableToggleLocked = readOnly;
   const suppressTooltips = dragInProgress || dragging;
   const rowTransition = [
     'box-shadow 180ms ease',
@@ -73,7 +74,11 @@ export function SortableChannelRow({
     transition: rowTransition || undefined,
     opacity: dragging ? 0.92 : channel.enabled === false ? 0.56 : 1,
     display: 'grid',
-    gridTemplateColumns: managementLocked || mobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) auto auto auto',
+    gridTemplateColumns: mobile
+      ? 'minmax(0, 1fr)'
+      : managementLocked
+        ? (enableToggleLocked ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) auto')
+        : 'minmax(0, 1fr) auto auto auto',
     alignItems: mobile ? 'stretch' : 'center',
     gap: mobile ? 8 : 6,
     padding: mobile ? '8px 9px' : '5px 8px',
@@ -276,15 +281,27 @@ export function SortableChannelRow({
                 </span>
               </div>
 
-              {!managementLocked && (
-                <button
-                  type="button"
-                  className="btn btn-link"
-                  onClick={() => setMobileDetailsOpen((current) => !current)}
-                  style={{ marginLeft: 'auto' }}
-                >
-                  {mobileDetailsOpen ? '收起配置' : '配置通道'}
-                </button>
+              {(!enableToggleLocked || !managementLocked) && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+                  {!enableToggleLocked && (
+                    <button
+                      type="button"
+                      onClick={() => onToggleEnabled(channel.enabled === false)}
+                      className={`btn btn-link ${channel.enabled === false ? 'btn-link-info' : 'btn-link-warning'}`}
+                    >
+                      {channel.enabled === false ? '启用' : '禁用'}
+                    </button>
+                  )}
+                  {!managementLocked && (
+                    <button
+                      type="button"
+                      className="btn btn-link"
+                      onClick={() => setMobileDetailsOpen((current) => !current)}
+                    >
+                      {mobileDetailsOpen ? '收起配置' : '配置通道'}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
@@ -322,13 +339,6 @@ export function SortableChannelRow({
                     className="btn btn-link btn-link-info"
                   >
                     {isUpdatingToken ? <span className="spinner spinner-sm" /> : '保存'}
-                  </button>
-
-                  <button
-                    onClick={() => onToggleEnabled(channel.enabled === false)}
-                    className={`btn btn-link ${channel.enabled === false ? 'btn-link-info' : 'btn-link-warning'}`}
-                  >
-                    {channel.enabled === false ? '启用' : '禁用'}
                   </button>
 
                   {onSiteBlockModel && channel.site?.id ? (
@@ -585,6 +595,14 @@ export function SortableChannelRow({
             </button>
           </div>
         </>
+      ) : !enableToggleLocked ? (
+        <button
+          onClick={() => onToggleEnabled(channel.enabled === false)}
+          className={`btn btn-link ${channel.enabled === false ? 'btn-link-info' : 'btn-link-warning'}`}
+          data-tooltip={suppressTooltips ? undefined : (channel.enabled === false ? '启用此通道' : '禁用此通道')}
+        >
+          {channel.enabled === false ? '启用' : '禁用'}
+        </button>
       ) : null}
     </div>
   );

@@ -15,6 +15,7 @@ const { apiMock, getBrandMock } = vi.hoisted(() => ({
     updateRoute: vi.fn(),
     addRoute: vi.fn(),
     batchUpdateChannels: vi.fn(),
+    updateChannel: vi.fn(),
   },
   getBrandMock: vi.fn(),
 }));
@@ -1637,7 +1638,47 @@ describe('TokenRoutes grouped source models', () => {
     }
   });
 
-  it('reuses the standard channel row presentation for explicit-group details while keeping channel management hidden', async () => {
+  it('keeps a single-source exact route visible after creating an explicit group', async () => {
+    apiMock.getRoutesSummary.mockResolvedValue([
+      {
+        id: 11, modelPattern: 'claude-haiku-4-5-20251001', displayName: null,
+        displayIcon: null, modelMapping: null, enabled: true,
+        routeMode: 'pattern', sourceRouteIds: [],
+        channelCount: 1, enabledChannelCount: 1, siteNames: ['Wong'],
+        decisionSnapshot: null, decisionRefreshedAt: null,
+      },
+      {
+        id: 21, modelPattern: 'claude-haiku-proxy', displayName: 'claude-haiku-proxy',
+        displayIcon: '', modelMapping: null, enabled: true,
+        routeMode: 'explicit_group', sourceRouteIds: [11],
+        channelCount: 1, enabledChannelCount: 1, siteNames: ['Wong'],
+        decisionSnapshot: null, decisionRefreshedAt: null,
+      },
+    ]);
+
+    let root!: WebTestRenderer;
+    try {
+      await act(async () => {
+        root = create(
+          <MemoryRouter initialEntries={['/routes']}>
+            <ToastProvider>
+              <TokenRoutes />
+            </ToastProvider>
+          </MemoryRouter>,
+        );
+      });
+      await flushMicrotasks();
+
+      const normalizedText = collectText(root.root).replace(/\s+/g, '');
+      expect(normalizedText).toContain('共2条路由');
+      expect(normalizedText).toContain('claude-haiku-4-5-20251001');
+      expect(normalizedText).toContain('claude-haiku-proxy');
+    } finally {
+      root?.unmount();
+    }
+  });
+
+  it('reuses the standard channel row presentation for explicit-group details while allowing enable/disable only', async () => {
     apiMock.getRoutesSummary.mockResolvedValue([
       {
         id: 11, modelPattern: 'claude-haiku-4-5-20251001', displayName: null,
@@ -1672,6 +1713,7 @@ describe('TokenRoutes grouped source models', () => {
         token: { id: 401, name: 'token-a', accountId: 301, enabled: true, isDefault: true },
       },
     ]);
+    apiMock.updateChannel.mockResolvedValue({ id: 101, enabled: false });
 
     let root!: WebTestRenderer;
     try {
@@ -1703,6 +1745,19 @@ describe('TokenRoutes grouped source models', () => {
       expect(findButtonByAriaLabel(root.root, '拖拽调整优先级桶').props.disabled).toBe(true);
       expect(root.root.findAll((node) => node.type === 'button' && collectText(node).trim() === '保存')).toHaveLength(0);
       expect(root.root.findAll((node) => node.type === 'button' && collectText(node).trim() === '移除')).toHaveLength(0);
+
+      const disableButton = root.root.find((node) => (
+        node.type === 'button'
+        && typeof node.props.onClick === 'function'
+        && collectText(node).trim() === '禁用'
+        && String(node.props.className || '').includes('btn-link-warning')
+      ));
+      await act(async () => {
+        disableButton.props.onClick();
+      });
+      await flushMicrotasks();
+
+      expect(apiMock.updateChannel).toHaveBeenCalledWith(101, { enabled: false });
     } finally {
       root?.unmount();
     }

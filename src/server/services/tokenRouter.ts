@@ -1409,6 +1409,8 @@ function buildVisibleEnabledRoutes(routes: RouteRow[]): RouteRow[] {
       const groupDisplayName = normalizeRouteDisplayName(groupRoute.displayName);
       if (!groupDisplayName || exactModelNames.has(groupDisplayName)) return false;
       if (isExplicitGroupRoute(groupRoute)) {
+        // Single-source groups keep the only exact source route visible for direct channel management.
+        if (groupRoute.sourceRouteIds.length <= 1) return false;
         return groupRoute.sourceRouteIds.includes(route.id);
       }
       return matchesModelPattern(exactModel, groupRoute.modelPattern);
