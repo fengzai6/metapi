@@ -7,6 +7,7 @@ import { invalidateSiteProxyCache, parseSiteProxyUrlInput } from '../../services
 import { formatUtcSqlDateTime } from '../../services/localTimeService.js';
 import { invalidateTokenRouterCache } from '../../services/tokenRouter.js';
 import { parseSiteCustomHeadersInput } from '../../services/siteCustomHeaders.js';
+import { parseSiteAllowedEndpointsInput } from '../../services/siteAllowedEndpoints.js';
 import { getSub2ApiSubscriptionFromExtraConfig } from '../../services/accountExtraConfig.js';
 import {
   parseSiteBatchPayload,
@@ -472,6 +473,7 @@ export async function sitesRoutes(app: FastifyInstance) {
       proxyUrl,
       useSystemProxy,
       customHeaders,
+      allowedEndpoints,
       externalCheckinUrl,
       status,
       isPinned,
@@ -510,6 +512,12 @@ export async function sitesRoutes(app: FastifyInstance) {
     const normalizedCustomHeaders = parseSiteCustomHeadersInput(customHeaders);
     if (!normalizedCustomHeaders.valid) {
       return reply.code(400).send({ error: normalizedCustomHeaders.error || 'Invalid customHeaders.' });
+    }
+    const normalizedAllowedEndpoints = parseSiteAllowedEndpointsInput(allowedEndpoints);
+    if (!normalizedAllowedEndpoints.valid) {
+      return reply.code(400).send({
+        error: normalizedAllowedEndpoints.error || 'Invalid allowedEndpoints. Expected an array of chat, messages, responses.',
+      });
     }
     const explicitInitializationPreset = initializationPresetId == null || initializationPresetId === ''
       ? null
@@ -560,6 +568,7 @@ export async function sitesRoutes(app: FastifyInstance) {
           proxyUrl: normalizedProxyUrl.proxyUrl,
           useSystemProxy: normalizedUseSystemProxy ?? false,
           customHeaders: normalizedCustomHeaders.customHeaders,
+          allowedEndpoints: normalizedAllowedEndpoints.allowedEndpoints,
           externalCheckinUrl: normalizedExternalCheckinUrl.url,
           status: normalizedStatus ?? 'active',
           isPinned: normalizedPinned ?? false,
@@ -651,6 +660,12 @@ export async function sitesRoutes(app: FastifyInstance) {
     if (!normalizedCustomHeaders.valid) {
       return reply.code(400).send({ error: normalizedCustomHeaders.error || 'Invalid customHeaders.' });
     }
+    const normalizedAllowedEndpoints = parseSiteAllowedEndpointsInput(body.allowedEndpoints);
+    if (!normalizedAllowedEndpoints.valid) {
+      return reply.code(400).send({
+        error: normalizedAllowedEndpoints.error || 'Invalid allowedEndpoints. Expected an array of chat, messages, responses.',
+      });
+    }
     const normalizedApiEndpoints = normalizeSiteApiEndpointsInput(body.apiEndpoints);
     if (!normalizedApiEndpoints.valid) {
       return reply.code(400).send({ error: normalizedApiEndpoints.error || 'Invalid apiEndpoints.' });
@@ -683,7 +698,8 @@ export async function sitesRoutes(app: FastifyInstance) {
     if (normalizedProxyUrl.present) updates.proxyUrl = normalizedProxyUrl.proxyUrl;
     if (body.useSystemProxy !== undefined) updates.useSystemProxy = normalizedUseSystemProxy;
     if (normalizedCustomHeaders.present) updates.customHeaders = normalizedCustomHeaders.customHeaders;
-    if (normalizedExternalCheckinUrl.present) updates.externalCheckinUrl = normalizedExternalCheckinUrl.url;
+    if (normalizedAllowedEndpoints.present) updates.allowedEndpoints = normalizedAllowedEndpoints.allowedEndpoints;
+    if (normalizedExternalCheckinUrl.present) updates.externalCheckinUrl = normalizedExternalCheckinUrl.url
     if (body.status !== undefined) updates.status = normalizedStatus;
     if (body.isPinned !== undefined) updates.isPinned = normalizedPinned;
     if (body.sortOrder !== undefined) updates.sortOrder = normalizedSortOrder;

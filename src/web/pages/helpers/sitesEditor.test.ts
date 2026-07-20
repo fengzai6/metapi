@@ -4,6 +4,7 @@ import {
   emptySiteApiEndpoint,
   emptySiteCustomHeader,
   emptySiteForm,
+  serializeSiteAllowedEndpoints,
   serializeSiteApiEndpoints,
   serializeSiteCustomHeaders,
   siteFormFromSite,
@@ -25,6 +26,7 @@ describe('buildSiteSaveAction', () => {
         ],
         customHeaders: '{"x-site-token":"alpha"}',
         useSystemProxy: false,
+        allowedEndpoints: ['chat', 'messages'],
         globalWeight: 1.2,
         postRefreshProbeEnabled: true,
         postRefreshProbeModel: 'gpt-4o',
@@ -47,6 +49,7 @@ describe('buildSiteSaveAction', () => {
         ],
         customHeaders: '{"x-site-token":"alpha"}',
         useSystemProxy: false,
+        allowedEndpoints: ['chat', 'messages'],
         globalWeight: 1.2,
         postRefreshProbeEnabled: true,
         postRefreshProbeModel: 'gpt-4o',
@@ -68,6 +71,7 @@ describe('buildSiteSaveAction', () => {
         useSystemProxy: true,
         apiEndpoints: [],
         customHeaders: '',
+        allowedEndpoints: null,
         globalWeight: 0.8,
       },
     );
@@ -84,6 +88,7 @@ describe('buildSiteSaveAction', () => {
         useSystemProxy: true,
         apiEndpoints: [],
         customHeaders: '',
+        allowedEndpoints: null,
         globalWeight: 0.8,
       },
     });
@@ -102,6 +107,7 @@ describe('buildSiteSaveAction', () => {
           useSystemProxy: false,
           apiEndpoints: [],
           customHeaders: '',
+          allowedEndpoints: null,
           globalWeight: 1,
         },
       ),
@@ -131,6 +137,7 @@ describe('buildSiteSaveAction', () => {
     expect(emptySiteForm()).not.toHaveProperty('apiKey');
     expect(emptySiteForm().customHeaders).toEqual([emptySiteCustomHeader()]);
     expect(emptySiteForm().apiEndpoints).toEqual([emptySiteApiEndpoint()]);
+    expect(emptySiteForm().allowedEndpoints).toEqual([]);
     expect(emptySiteForm().proxyUrl).toBe('');
     expect(siteFormFromSite(legacySite)).not.toHaveProperty('apiKey');
     expect(siteFormFromSite({
@@ -144,6 +151,11 @@ describe('buildSiteSaveAction', () => {
         lastFailureReason: 'HTTP 502',
       },
     ]);
+    expect(siteFormFromSite({
+      allowedEndpoints: '["messages","chat"]',
+    }).allowedEndpoints).toEqual(['chat', 'messages']);
+    expect(serializeSiteAllowedEndpoints(['responses', 'chat', 'chat'])).toEqual(['chat', 'responses']);
+    expect(serializeSiteAllowedEndpoints([])).toBeNull();
   });
 
   it('parses custom headers json into key value rows', () => {

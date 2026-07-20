@@ -8,6 +8,10 @@ import {
   applyUpstreamEndpointRuntimePreference,
   buildEndpointCapabilityProfile,
 } from './upstreamEndpointRuntimeMemory.js';
+import {
+  readSiteAllowedEndpoints,
+  type SiteAllowedEndpoint,
+} from './siteAllowedEndpoints.js';
 import type { DownstreamFormat } from '../transformers/shared/normalized.js';
 
 export type EndpointPreference = DownstreamFormat | 'responses';
@@ -23,6 +27,7 @@ type ChannelContext = {
     url: string;
     platform: string;
     apiKey?: string | null;
+    allowedEndpoints?: string | null;
   };
   account: {
     id: number;
@@ -30,6 +35,15 @@ type ChannelContext = {
     apiToken?: string | null;
   };
 };
+
+function applySiteAllowedEndpoints(
+  candidates: UpstreamEndpoint[],
+  allowed: SiteAllowedEndpoint[] | null,
+): UpstreamEndpoint[] {
+  if (!allowed || allowed.length === 0) return candidates;
+  const allowedSet = new Set<string>(allowed);
+  return candidates.filter((endpoint) => allowedSet.has(endpoint));
+}
 
 function asTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -151,15 +165,16 @@ export async function resolveUpstreamEndpointCandidates(
   hints?: EndpointDerivationHints,
 ): Promise<UpstreamEndpoint[]> {
   const sitePlatform = normalizePlatformName(context.site.platform);
+  const siteAllowed = readSiteAllowedEndpoints(context.site.allowedEndpoints);
   if (hints?.requestKind === 'responses-compact') {
-    return ['responses'];
+    return applySiteAllowedEndpoints(['responses'], siteAllowed);
   }
   if (
     hints?.requiresNativeResponsesFileUrl
     && sitePlatform !== 'claude'
     && sitePlatform !== 'anyrouter'
   ) {
-    return ['responses'];
+    return applySiteAllowedEndpoints(['responses'], siteAllowed);
   }
 
   const capabilityProfile = buildEndpointCapabilityProfile({
@@ -180,10 +195,10 @@ export async function resolveUpstreamEndpointCandidates(
   );
   const finalizeCandidates = (candidates: UpstreamEndpoint[]): UpstreamEndpoint[] => {
     const preferredCandidates = applyRuntimePreference(candidates);
-    if (hints?.requestKind === 'claude-count-tokens') {
-      return preferredCandidates.includes('messages') ? ['messages'] : ([] as UpstreamEndpoint[]);
-    }
-    return preferredCandidates;
+    const afterRequestKind = hints?.requestKind === 'claude-count-tokens'
+      ? (preferredCandidates.includes('messages') ? (['messages'] as UpstreamEndpoint[]) : [])
+      : preferredCandidates;
+    return applySiteAllowedEndpoints(afterRequestKind, siteAllowed);
   };
   const conversationFileSummary = requestCapabilities?.conversationFileSummary ?? {
     hasImage: false,

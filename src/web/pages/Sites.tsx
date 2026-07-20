@@ -29,9 +29,11 @@ import {
   emptySiteApiEndpoint,
   emptySiteCustomHeader,
   emptySiteForm,
+  serializeSiteAllowedEndpoints,
   serializeSiteApiEndpoints,
   serializeSiteCustomHeaders,
   siteFormFromSite,
+  type SiteAllowedEndpoint,
   type SiteEditorState,
   type SiteApiEndpointField,
   type SiteForm,
@@ -63,6 +65,7 @@ type SiteRow = {
   proxyUrl?: string | null;
   useSystemProxy?: boolean;
   customHeaders?: string | null;
+  allowedEndpoints?: string | null;
   globalWeight?: number;
   isPinned?: boolean;
   sortOrder?: number;
@@ -85,6 +88,17 @@ type SiteRow = {
 
 function hasConfiguredCustomHeaders(customHeaders?: string | null): boolean {
   return typeof customHeaders === 'string' && customHeaders.trim().length > 0;
+}
+
+function formatAllowedEndpointsBadge(raw?: string | null): string {
+  if (typeof raw !== 'string' || !raw.trim()) return '不限制';
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return '不限制';
+    return parsed.join(', ');
+  } catch {
+    return '不限制';
+  }
 }
 
 function getConfiguredSiteApiEndpoints(site?: Pick<SiteRow, 'apiEndpoints'> | null) {
@@ -749,6 +763,7 @@ export default function Sites() {
       useSystemProxy: !!form.useSystemProxy,
       apiEndpoints: serializedApiEndpoints.apiEndpoints,
       customHeaders: serializedCustomHeaders.customHeaders,
+      allowedEndpoints: serializeSiteAllowedEndpoints(form.allowedEndpoints),
       globalWeight: Number(parsedGlobalWeight.toFixed(3)),
       postRefreshProbeEnabled: probeEnabled,
       postRefreshProbeModel: probeModel.trim(),
@@ -1976,6 +1991,42 @@ export default function Sites() {
                 越大越容易被路由选中。建议 0.5-3，默认 1。
               </div>
             </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>允许的上游协议</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                {([
+                  { id: 'chat' as const, label: 'Chat Completions' },
+                  { id: 'messages' as const, label: 'Messages' },
+                  { id: 'responses' as const, label: 'Responses' },
+                ]).map((option) => {
+                  const checked = form.allowedEndpoints.includes(option.id);
+                  return (
+                    <label key={option.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setForm((prev) => {
+                            const next = new Set(prev.allowedEndpoints);
+                            if (e.target.checked) next.add(option.id);
+                            else next.delete(option.id);
+                            return {
+                              ...prev,
+                              allowedEndpoints: (['chat', 'messages', 'responses'] as const)
+                                .filter((endpoint): endpoint is SiteAllowedEndpoint => next.has(endpoint)),
+                            };
+                          });
+                        }}
+                      />
+                      {option.label}
+                    </label>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                不选择表示不限制上游协议
+              </div>
+            </div>
           </ResponsiveFormGrid>
         </CenteredModal>
       )}
@@ -2156,6 +2207,10 @@ export default function Sites() {
                           value={hasConfiguredCustomHeaders(site.customHeaders) ? '已配置' : '-'}
                         />
                         <MobileField
+                          label="上游协议"
+                          value={formatAllowedEndpointsBadge(site.allowedEndpoints)}
+                        />
+                        <MobileField
                           label="创建时间"
                           value={formatDateTimeLocal(site.createdAt)}
                         />
@@ -2260,6 +2315,9 @@ export default function Sites() {
                             自定义头
                           </span>
                         ) : null}
+                        <span className={`badge ${formatAllowedEndpointsBadge(site.allowedEndpoints) === '不限制' ? 'badge-muted' : 'badge-info'}`} style={{ fontSize: 11 }}>
+                          协议: {formatAllowedEndpointsBadge(site.allowedEndpoints)}
+                        </span>
                         <span className={`badge ${getConfiguredSiteApiEndpoints(site).length > 0 ? 'badge-warning' : 'badge-muted'}`} style={{ fontSize: 11 }}>
                           API 地址: {buildSiteApiEndpointSummary(site)}
                         </span>

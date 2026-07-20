@@ -161,4 +161,70 @@ describe('upstreamEndpointDerivation', () => {
 
     expect(order).toEqual([]);
   });
+
+  it('filters candidates by site allowedEndpoints whitelist and keeps relative order', async () => {
+    const order = await resolveUpstreamEndpointCandidates(
+      {
+        ...baseContext,
+        site: {
+          ...baseContext.site,
+          platform: 'new-api',
+          allowedEndpoints: JSON.stringify(['messages', 'chat']),
+        },
+      },
+      'gpt-4o',
+      'openai',
+    );
+
+    expect(order).toEqual(['chat', 'messages']);
+  });
+
+  it('returns empty list when whitelist has no overlap with derived candidates', async () => {
+    const order = await resolveUpstreamEndpointCandidates(
+      {
+        ...baseContext,
+        site: {
+          ...baseContext.site,
+          platform: 'claude',
+          allowedEndpoints: JSON.stringify(['responses']),
+        },
+      },
+      'claude-opus-4-6',
+      'claude',
+    );
+
+    expect(order).toEqual([]);
+  });
+
+  it('ignores empty/null allowedEndpoints (unrestricted)', async () => {
+    const unrestricted = await resolveUpstreamEndpointCandidates(baseContext, 'gpt-4o', 'openai');
+    const emptyList = await resolveUpstreamEndpointCandidates(
+      {
+        ...baseContext,
+        site: { ...baseContext.site, allowedEndpoints: '[]' },
+      },
+      'gpt-4o',
+      'openai',
+    );
+    expect(emptyList).toEqual(unrestricted);
+  });
+
+  it('applies whitelist even to responses-compact requestKind', async () => {
+    const order = await resolveUpstreamEndpointCandidates(
+      {
+        ...baseContext,
+        site: {
+          ...baseContext.site,
+          allowedEndpoints: JSON.stringify(['chat', 'messages']),
+        },
+      },
+      'gpt-5.3',
+      'responses',
+      undefined,
+      undefined,
+      { requestKind: 'responses-compact' },
+    );
+
+    expect(order).toEqual([]);
+  });
 });

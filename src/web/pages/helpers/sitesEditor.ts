@@ -3,6 +3,13 @@ export type SiteCustomHeaderField = {
   value: string;
 };
 
+export type SiteAllowedEndpoint = 'chat' | 'messages' | 'responses';
+export const SITE_ALLOWED_ENDPOINT_OPTIONS: readonly SiteAllowedEndpoint[] = [
+  'chat',
+  'messages',
+  'responses',
+];
+
 export type SiteApiEndpointField = {
   id?: number;
   draftId?: string;
@@ -21,6 +28,7 @@ export type SiteForm = {
   useSystemProxy: boolean;
   apiEndpoints: SiteApiEndpointField[];
   customHeaders: SiteCustomHeaderField[];
+  allowedEndpoints: SiteAllowedEndpoint[];
   globalWeight: string;
 };
 
@@ -42,6 +50,7 @@ export type SiteSavePayload = {
     sortOrder: number;
   }>;
   customHeaders: string;
+  allowedEndpoints: SiteAllowedEndpoint[] | null;
   globalWeight: number;
   postRefreshProbeEnabled?: boolean;
   postRefreshProbeModel?: string;
@@ -80,6 +89,7 @@ export function emptySiteForm(): SiteForm {
     useSystemProxy: false,
     apiEndpoints: [emptySiteApiEndpoint()],
     customHeaders: [emptySiteCustomHeader()],
+    allowedEndpoints: [],
     globalWeight: '1',
   };
 }
@@ -133,7 +143,41 @@ function parseApiEndpointsForEditor(raw: unknown): SiteApiEndpointField[] {
   return ensureSiteApiEndpointRows(rows);
 }
 
-export function siteFormFromSite(site: Partial<Omit<SiteForm, 'apiEndpoints' | 'customHeaders' | 'globalWeight' | 'externalCheckinUrl' | 'proxyUrl' | 'useSystemProxy'>> & {
+function parseAllowedEndpointsForEditor(raw: unknown): SiteAllowedEndpoint[] {
+  const allowed = new Set(['chat', 'messages', 'responses']);
+  let list: unknown = raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    try {
+      list = JSON.parse(trimmed);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  const seen = new Set<SiteAllowedEndpoint>();
+  for (const item of list) {
+    if (typeof item !== 'string') continue;
+    const value = item.trim().toLowerCase();
+    if (allowed.has(value)) seen.add(value as SiteAllowedEndpoint);
+  }
+  return SITE_ALLOWED_ENDPOINT_OPTIONS.filter((endpoint) => seen.has(endpoint));
+}
+
+export function serializeSiteAllowedEndpoints(
+  endpoints: SiteAllowedEndpoint[],
+): SiteAllowedEndpoint[] | null {
+  const allowed = new Set(['chat', 'messages', 'responses']);
+  const seen = new Set<SiteAllowedEndpoint>();
+  for (const item of endpoints) {
+    if (allowed.has(item)) seen.add(item);
+  }
+  const ordered = SITE_ALLOWED_ENDPOINT_OPTIONS.filter((endpoint) => seen.has(endpoint));
+  return ordered.length > 0 ? [...ordered] : null;
+}
+
+export function siteFormFromSite(site: Partial<Omit<SiteForm, 'apiEndpoints' | 'customHeaders' | 'allowedEndpoints' | 'globalWeight' | 'externalCheckinUrl' | 'proxyUrl' | 'useSystemProxy'>> & {
   externalCheckinUrl?: string | null;
   proxyUrl?: string | null;
   useSystemProxy?: boolean | null;
@@ -145,6 +189,7 @@ export function siteFormFromSite(site: Partial<Omit<SiteForm, 'apiEndpoints' | '
     lastFailureReason?: string | null;
   }> | null;
   customHeaders?: string | null;
+  allowedEndpoints?: string | string[] | null;
   globalWeight?: number | string | null;
 }): SiteForm {
   const globalWeightRaw = Number(site.globalWeight);
@@ -158,6 +203,7 @@ export function siteFormFromSite(site: Partial<Omit<SiteForm, 'apiEndpoints' | '
     useSystemProxy: !!site.useSystemProxy,
     apiEndpoints: parseApiEndpointsForEditor(site.apiEndpoints),
     customHeaders: parseCustomHeadersForEditor(site.customHeaders),
+    allowedEndpoints: parseAllowedEndpointsForEditor(site.allowedEndpoints),
     globalWeight,
   };
 }
