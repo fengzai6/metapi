@@ -2032,6 +2032,7 @@ export default function TokenRoutes() {
           candidateView={getRouteCandidateView(addChannelModalRoute.id)}
           onSuccess={handleAddChannelSuccess}
           missingTokenHints={getRouteMissingTokenHints(addChannelModalRoute.id)}
+          missingTokenGroupHints={getRouteMissingTokenGroupHints(addChannelModalRoute.id)}
           onCreateTokenForMissing={handleCreateTokenForMissingAccount}
           existingChannelAccountIds={new Set((channelsByRouteId[addChannelModalRoute.id] || []).map((c) => c.accountId))}
         />

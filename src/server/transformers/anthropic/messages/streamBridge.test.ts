@@ -93,7 +93,7 @@ describe('anthropic messages stream bridge', () => {
         event: 'content_block_delta',
         data: JSON.stringify({
           type: 'content_block_delta',
-          index: 0,
+          index: 1,
           delta: {
             type: 'thinking_delta',
             thinking: '  padded thinking  ',
@@ -107,6 +107,98 @@ describe('anthropic messages stream bridge', () => {
 
     expect(textResult.lines.join('')).toContain('  padded text  ');
     expect(thinkingResult.lines.join('')).toContain('  padded thinking  ');
+  });
+
+  it('synthesizes content_block_start before orphan text_delta so Claude clients do not fail', () => {
+    const streamContext = anthropicMessagesStream.createContext('claude-test');
+    const downstreamContext = anthropicMessagesStream.createDownstreamContext();
+
+    const result = consumeAnthropicSseEvent(
+      {
+        event: 'content_block_delta',
+        data: JSON.stringify({
+          type: 'content_block_delta',
+          index: 0,
+          delta: {
+            type: 'text_delta',
+            text: 'hello',
+          },
+        }),
+      },
+      streamContext,
+      downstreamContext,
+      'claude-test',
+    );
+
+    const serialized = result.lines.join('');
+    expect(serialized).toContain('event: content_block_start');
+    expect(serialized).toContain('"type":"text"');
+    expect(serialized.indexOf('content_block_start')).toBeLessThan(serialized.indexOf('content_block_delta'));
+    expect(serialized).toContain('"text":"hello"');
+  });
+
+  it('synthesizes tool_use content_block_start before orphan input_json_delta', () => {
+    const streamContext = anthropicMessagesStream.createContext('claude-test');
+    const downstreamContext = anthropicMessagesStream.createDownstreamContext();
+
+    const result = consumeAnthropicSseEvent(
+      {
+        event: 'content_block_delta',
+        data: JSON.stringify({
+          type: 'content_block_delta',
+          index: 0,
+          delta: {
+            type: 'input_json_delta',
+            partial_json: '{ "city": "Paris" }',
+          },
+        }),
+      },
+      streamContext,
+      downstreamContext,
+      'claude-test',
+    );
+
+    const serialized = result.lines.join('');
+    expect(serialized).toContain('event: content_block_start');
+    expect(serialized).toContain('"type":"tool_use"');
+    expect(serialized.indexOf('content_block_start')).toBeLessThan(serialized.indexOf('content_block_delta'));
+    expect(serialized).toContain('partial_json":"{ \\"city\\": \\"Paris\\" }"');
+  });
+
+  it('does not re-emit content_block_start when upstream already opened the block', () => {
+    const streamContext = anthropicMessagesStream.createContext('claude-test');
+    const downstreamContext = anthropicMessagesStream.createDownstreamContext();
+
+    const startResult = consumeAnthropicSseEvent(
+      {
+        event: 'content_block_start',
+        data: JSON.stringify({
+          type: 'content_block_start',
+          index: 0,
+          content_block: { type: 'text', text: '' },
+        }),
+      },
+      streamContext,
+      downstreamContext,
+      'claude-test',
+    );
+    const deltaResult = consumeAnthropicSseEvent(
+      {
+        event: 'content_block_delta',
+        data: JSON.stringify({
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'text_delta', text: 'already-open' },
+        }),
+      },
+      streamContext,
+      downstreamContext,
+      'claude-test',
+    );
+
+    expect(startResult.lines.join('').match(/event: content_block_start/g)?.length ?? 0).toBe(1);
+    expect(deltaResult.lines.join('')).not.toContain('event: content_block_start');
+    expect(deltaResult.lines.join('')).toContain('already-open');
   });
 
   it('preserves partial_json spacing for streaming tool-call deltas', () => {

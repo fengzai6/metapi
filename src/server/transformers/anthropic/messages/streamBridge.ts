@@ -36,6 +36,8 @@ type ExtendedClaudeDownstreamContext = ClaudeDownstreamContext & {
   textSourceIndex?: number | null;
   pendingSignature?: string | null;
   activeToolSlot?: number | null;
+  /** Upstream source indexes already opened (real or synthesized) during raw SSE passthrough. */
+  rawOpenBlocks?: Record<number, AnthropicBlockKind>;
 };
 
 export const ANTHROPIC_RAW_SSE_EVENT_NAMES = new Set([
@@ -182,7 +184,164 @@ function ensureContext(context: ClaudeDownstreamContext): ExtendedClaudeDownstre
   if (extended.textSourceIndex === undefined) extended.textSourceIndex = null;
   if (extended.pendingSignature === undefined) extended.pendingSignature = null;
   if (extended.activeToolSlot === undefined) extended.activeToolSlot = null;
+  if (!extended.rawOpenBlocks) extended.rawOpenBlocks = {};
+  if (!extended.toolBlocks) extended.toolBlocks = {};
   return extended;
+}
+
+function blockKindFromContentBlockType(value: unknown): AnthropicBlockKind | null {
+  const blockType = asTrimmedString(value).toLowerCase();
+  if (blockType === 'text') return 'text';
+  if (blockType === 'thinking') return 'thinking';
+  if (blockType === 'redacted_thinking') return 'redacted_thinking';
+  if (blockType === 'tool_use' || blockType === 'server_tool_use') return 'tool_use';
+  return null;
+}
+
+function blockKindFromDeltaType(value: unknown): AnthropicBlockKind | null {
+  const deltaType = asTrimmedString(value).toLowerCase();
+  if (deltaType === 'text_delta') return 'text';
+  if (deltaType === 'thinking_delta' || deltaType === 'signature_delta') return 'thinking';
+  if (deltaType === 'input_json_delta') return 'tool_use';
+  return null;
+}
+
+function markRawBlockOpen(
+  context: ExtendedClaudeDownstreamContext,
+  kind: AnthropicBlockKind,
+  sourceIndex: number,
+  contentBlock?: AnthropicStreamPayload | null,
+): void {
+  context.rawOpenBlocks![sourceIndex] = kind;
+  context.contentBlockStarted = true;
+  if (kind === 'text') {
+    context.textBlockIndex = sourceIndex;
+    context.textSourceIndex = sourceIndex;
+    if (context.nextContentBlockIndex <= sourceIndex) {
+      context.nextContentBlockIndex = sourceIndex + 1;
+    }
+    return;
+  }
+  if (kind === 'thinking') {
+    context.thinkingBlockIndex = sourceIndex;
+    context.thinkingSourceIndex = sourceIndex;
+    if (context.nextContentBlockIndex <= sourceIndex) {
+      context.nextContentBlockIndex = sourceIndex + 1;
+    }
+    return;
+  }
+  if (kind === 'redacted_thinking') {
+    context.redactedBlockIndex = sourceIndex;
+    context.redactedSourceIndex = sourceIndex;
+    if (context.nextContentBlockIndex <= sourceIndex) {
+      context.nextContentBlockIndex = sourceIndex + 1;
+    }
+    return;
+  }
+  if (kind === 'tool_use') {
+    const id = asTrimmedString(contentBlock?.id) || `toolu_${sourceIndex}`;
+    const name = asTrimmedString(contentBlock?.name) || `tool_${sourceIndex}`;
+    context.toolBlocks[sourceIndex] = {
+      contentIndex: sourceIndex,
+      id,
+      name,
+      open: true,
+      sourceIndex,
+    };
+    context.activeToolSlot = sourceIndex;
+    if (context.nextContentBlockIndex <= sourceIndex) {
+      context.nextContentBlockIndex = sourceIndex + 1;
+    }
+  }
+}
+
+function markRawBlockClosed(
+  context: ExtendedClaudeDownstreamContext,
+  sourceIndex: number,
+): void {
+  const kind = context.rawOpenBlocks?.[sourceIndex];
+  if (context.rawOpenBlocks) delete context.rawOpenBlocks[sourceIndex];
+  if (kind === 'text' && context.textSourceIndex === sourceIndex) {
+    context.textBlockIndex = null;
+    context.textSourceIndex = null;
+  }
+  if (kind === 'thinking' && context.thinkingSourceIndex === sourceIndex) {
+    context.thinkingBlockIndex = null;
+    context.thinkingSourceIndex = null;
+  }
+  if (kind === 'redacted_thinking' && context.redactedSourceIndex === sourceIndex) {
+    context.redactedBlockIndex = null;
+    context.redactedSourceIndex = null;
+  }
+  if (kind === 'tool_use') {
+    const tool = context.toolBlocks[sourceIndex];
+    if (tool) tool.open = false;
+    if (context.activeToolSlot === sourceIndex) context.activeToolSlot = null;
+  }
+  context.contentBlockStarted = Object.keys(context.rawOpenBlocks || {}).length > 0;
+}
+
+function synthesizeRawContentBlockStart(
+  kind: AnthropicBlockKind,
+  sourceIndex: number,
+  context: ExtendedClaudeDownstreamContext,
+): string[] {
+  if (kind === 'text') {
+    return ensureTextBlockStart(context, sourceIndex);
+  }
+  if (kind === 'thinking') {
+    return ensureThinkingBlockStart(context, sourceIndex);
+  }
+  if (kind === 'redacted_thinking') {
+    return ensureRedactedBlockStart(context, '', sourceIndex);
+  }
+  return ensureToolBlockStart(context, {
+    index: sourceIndex,
+    id: `toolu_${sourceIndex}`,
+    name: `tool_${sourceIndex}`,
+  }).events;
+}
+
+/**
+ * Claude clients crash with "Content block not found" when they receive
+ * content_block_delta/stop for an index that never got content_block_start.
+ * Some upstreams omit start events; synthesize the missing start here.
+ */
+function repairRawAnthropicMissingBlockStart(
+  eventName: string,
+  payload: AnthropicStreamPayload,
+  context: ExtendedClaudeDownstreamContext,
+): string[] {
+  const sourceIndex = normalizeBlockIndex(payload.index) ?? 0;
+
+  if (eventName === 'content_block_start' && isRecord(payload.content_block)) {
+    const kind = blockKindFromContentBlockType(payload.content_block.type);
+    if (kind) markRawBlockOpen(context, kind, sourceIndex, payload.content_block);
+    return [];
+  }
+
+  if (eventName === 'content_block_delta' && isRecord(payload.delta)) {
+    if (context.rawOpenBlocks?.[sourceIndex]) return [];
+    const kind = blockKindFromDeltaType(payload.delta.type);
+    if (!kind) return [];
+    const events = synthesizeRawContentBlockStart(kind, sourceIndex, context);
+    markRawBlockOpen(context, kind, sourceIndex);
+    return events;
+  }
+
+  if (eventName === 'content_block_stop') {
+    if (context.rawOpenBlocks?.[sourceIndex]) {
+      markRawBlockClosed(context, sourceIndex);
+      return [];
+    }
+    // Orphan stop: open an empty text block first so the client can close it.
+    const events = synthesizeRawContentBlockStart('text', sourceIndex, context);
+    markRawBlockOpen(context, 'text', sourceIndex);
+    markRawBlockClosed(context, sourceIndex);
+    return events;
+  }
+
+  return [];
 }
 
 export function syncAnthropicRawStreamStateFromEvent(
@@ -208,11 +367,20 @@ export function syncAnthropicRawStreamStateFromEvent(
 
   if (eventName === 'content_block_start') {
     context.contentBlockStarted = true;
+    if (isRecord(parsedPayload) && isRecord(parsedPayload.content_block)) {
+      const sourceIndex = normalizeBlockIndex(parsedPayload.index) ?? 0;
+      const kind = blockKindFromContentBlockType(parsedPayload.content_block.type);
+      if (kind) markRawBlockOpen(context, kind, sourceIndex, parsedPayload.content_block);
+    }
     return;
   }
 
   if (eventName === 'content_block_stop') {
     context.contentBlockStarted = false;
+    if (isRecord(parsedPayload)) {
+      const sourceIndex = normalizeBlockIndex(parsedPayload.index) ?? 0;
+      markRawBlockClosed(context, sourceIndex);
+    }
     return;
   }
 
@@ -454,7 +622,7 @@ function ensureToolBlockStart(
   let state = context.toolBlocks[toolSlot];
   if (!state) {
     state = {
-      contentIndex: allocateContentIndex(context),
+      contentIndex: allocateContentIndex(context, toolSlot),
       id: toolDelta.id || `toolu_${toolSlot}`,
       name: toolDelta.name || `tool_${toolSlot}`,
       open: false,
@@ -923,15 +1091,26 @@ export function consumeAnthropicSseEvent(
       : (isAnthropicRawSseEventName(payloadType) ? payloadType : '');
 
     if (claudeEventName) {
-      syncAnthropicRawStreamStateFromEvent(
+      const repairedPrefix = repairRawAnthropicMissingBlockStart(
         claudeEventName,
         parsedPayload,
-        streamContext,
         context,
       );
+      if (claudeEventName !== 'content_block_delta') {
+        // delta open-state is already handled by repair; other events still need sync.
+        syncAnthropicRawStreamStateFromEvent(
+          claudeEventName,
+          parsedPayload,
+          streamContext,
+          context,
+        );
+      }
       return {
         handled: true,
-        lines: [serializeAnthropicRawSseEvent(claudeEventName, eventBlock.data)],
+        lines: [
+          ...repairedPrefix,
+          serializeAnthropicRawSseEvent(claudeEventName, eventBlock.data),
+        ],
         done: context.doneSent,
         parsedPayload,
       };

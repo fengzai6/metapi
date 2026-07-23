@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import CenteredModal from '../../components/CenteredModal.js';
 import ModernSelect from '../../components/ModernSelect.js';
 import { api } from '../../api.js';
@@ -18,6 +18,25 @@ type ChannelSelection = {
   sourceModel?: string;
 };
 
+type SelectableAccount = RouteAccountOption & {
+  missingGroups?: string[];
+  kind: 'candidate' | 'missing_group';
+};
+
+type LoadedTokenOption = RouteTokenOption & {
+  tokenGroup?: string | null;
+  modelAvailable?: boolean;
+};
+
+type AccountTokenRow = {
+  id: number;
+  name?: string | null;
+  isDefault?: boolean | null;
+  enabled?: boolean | null;
+  valueStatus?: string | null;
+  tokenGroup?: string | null;
+};
+
 type AddChannelModalProps = {
   open: boolean;
   onClose: () => void;
@@ -26,9 +45,26 @@ type AddChannelModalProps = {
   candidateView: RouteCandidateView;
   onSuccess: () => void;
   missingTokenHints?: RouteMissingTokenHint[];
+  missingTokenGroupHints?: RouteMissingTokenHint[];
   onCreateTokenForMissing?: (accountId: number, modelName: string) => void;
   existingChannelAccountIds?: Set<number>;
 };
+
+function isUsableAccountTokenRow(token: AccountTokenRow): boolean {
+  if (token.enabled === false) return false;
+  if (token.valueStatus && token.valueStatus !== 'ready') return false;
+  return Number.isFinite(token.id) && token.id > 0;
+}
+
+function buildTokenDescription(token: LoadedTokenOption): string {
+  if (token.modelAvailable) {
+    return buildFixedTokenOptionDescription(token);
+  }
+  const group = (token.tokenGroup || '').trim() || '未知分组';
+  return token.isDefault
+    ? `分组 ${group}；目前也是账号默认，但以后不会自动跟随`
+    : `分组 ${group}；未出现在模型候选中，可手动绑定`;
+}
 
 export default function AddChannelModal({
   open,
@@ -38,27 +74,70 @@ export default function AddChannelModal({
   candidateView,
   onSuccess,
   missingTokenHints,
+  missingTokenGroupHints,
   onCreateTokenForMissing,
   existingChannelAccountIds,
 }: AddChannelModalProps) {
   const toast = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAccounts, setSelectedAccounts] = useState<Record<number, ChannelSelection>>({});
+  const [tokensByAccountId, setTokensByAccountId] = useState<Record<number, LoadedTokenOption[]>>({});
+  const [loadingTokensByAccountId, setLoadingTokensByAccountId] = useState<Record<number, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open) return;
+    setSelectedAccounts({});
+    setSearchQuery('');
+    setTokensByAccountId({});
+    setLoadingTokensByAccountId({});
+  }, [open]);
+
+  const selectableAccounts = useMemo(() => {
+    const accounts = new Map<number, SelectableAccount>();
+    for (const option of candidateView.accountOptions) {
+      accounts.set(option.id, { ...option, kind: 'candidate' });
+    }
+    for (const hint of missingTokenGroupHints || []) {
+      for (const account of hint.accounts) {
+        if (!Number.isFinite(account.accountId) || account.accountId <= 0) continue;
+        const existing = accounts.get(account.accountId);
+        const missingGroups = Array.isArray(account.missingGroups) ? account.missingGroups : [];
+        if (existing) {
+          if (missingGroups.length === 0) continue;
+          const merged = Array.from(new Set([...(existing.missingGroups || []), ...missingGroups]))
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+          existing.missingGroups = merged;
+          continue;
+        }
+        accounts.set(account.accountId, {
+          id: account.accountId,
+          label: `${account.username || `account-${account.accountId}`} @ ${account.siteName}`,
+          missingGroups: [...missingGroups],
+          kind: 'missing_group',
+        });
+      }
+    }
+    return Array.from(accounts.values()).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+  }, [candidateView.accountOptions, missingTokenGroupHints]);
+
+  const selectableAccountIds = useMemo(
+    () => new Set(selectableAccounts.map((account) => account.id)),
+    [selectableAccounts],
+  );
 
   const filteredAccounts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return candidateView.accountOptions;
-    return candidateView.accountOptions.filter((option) =>
-      option.label.toLowerCase().includes(q),
-    );
-  }, [candidateView.accountOptions, searchQuery]);
+    if (!q) return selectableAccounts;
+    return selectableAccounts.filter((option) => option.label.toLowerCase().includes(q));
+  }, [selectableAccounts, searchQuery]);
 
   const missingAccounts = useMemo(() => {
     if (!missingTokenHints || missingTokenHints.length === 0) return [];
     const seen = new Map<number, { accountId: number; label: string; modelName: string }>();
     for (const hint of missingTokenHints) {
       for (const account of hint.accounts) {
+        if (selectableAccountIds.has(account.accountId)) continue;
         if (!seen.has(account.accountId)) {
           const label = `${account.username || `account-${account.accountId}`} @ ${account.siteName}`;
           seen.set(account.accountId, { accountId: account.accountId, label, modelName: hint.modelName });
@@ -66,7 +145,7 @@ export default function AddChannelModal({
       }
     }
     return Array.from(seen.values());
-  }, [missingTokenHints]);
+  }, [missingTokenHints, selectableAccountIds]);
 
   const filteredMissingAccounts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -76,14 +155,79 @@ export default function AddChannelModal({
 
   const selectedCount = Object.keys(selectedAccounts).length;
 
-  const toggleAccount = (account: RouteAccountOption) => {
+  const resolveTokensForAccount = (accountId: number): LoadedTokenOption[] => {
+    if (tokensByAccountId[accountId]) return tokensByAccountId[accountId];
+    return (candidateView.tokenOptionsByAccountId[accountId] || []).map((token) => ({
+      ...token,
+      modelAvailable: true,
+    }));
+  };
+
+  const loadTokensForAccount = async (accountId: number) => {
+    if (tokensByAccountId[accountId] || loadingTokensByAccountId[accountId]) return;
+    setLoadingTokensByAccountId((prev) => ({ ...prev, [accountId]: true }));
+    try {
+      const rows = await api.getAccountTokens(accountId) as AccountTokenRow[];
+      const candidateTokens = candidateView.tokenOptionsByAccountId[accountId] || [];
+      const candidateById = new Map(candidateTokens.map((token) => [token.id, token]));
+      const loadedReady = (Array.isArray(rows) ? rows : [])
+        .filter(isUsableAccountTokenRow)
+        .map((row) => ({
+          id: row.id,
+          name: String(row.name || `token-${row.id}`),
+          isDefault: !!row.isDefault,
+          tokenGroup: row.tokenGroup || null,
+          modelAvailable: candidateById.has(row.id),
+          sourceModel: candidateById.get(row.id)?.sourceModel,
+        }));
+
+      // Keep candidate rows (may include sourceModel variants), then append non-candidate tokens.
+      const merged: LoadedTokenOption[] = [
+        ...candidateTokens.map((token) => ({
+          ...token,
+          tokenGroup: loadedReady.find((row) => row.id === token.id)?.tokenGroup || null,
+          modelAvailable: true,
+        })),
+      ];
+      const seenIds = new Set(merged.map((token) => token.id));
+      for (const token of loadedReady) {
+        if (seenIds.has(token.id)) continue;
+        merged.push(token);
+        seenIds.add(token.id);
+      }
+      merged.sort((a, b) => {
+        if (a.modelAvailable !== b.modelAvailable) return a.modelAvailable ? -1 : 1;
+        if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+        if (a.id !== b.id) return a.id - b.id;
+        return (a.sourceModel || '').localeCompare(b.sourceModel || '', undefined, { sensitivity: 'base' });
+      });
+      setTokensByAccountId((prev) => ({ ...prev, [accountId]: merged }));
+    } catch (e: any) {
+      toast.error(e?.message || tr('加载账号令牌失败'));
+      setTokensByAccountId((prev) => ({
+        ...prev,
+        [accountId]: (candidateView.tokenOptionsByAccountId[accountId] || []).map((token) => ({
+          ...token,
+          modelAvailable: true,
+        })),
+      }));
+    } finally {
+      setLoadingTokensByAccountId((prev) => {
+        const next = { ...prev };
+        delete next[accountId];
+        return next;
+      });
+    }
+  };
+
+  const toggleAccount = (account: SelectableAccount) => {
     setSelectedAccounts((prev) => {
       if (prev[account.id]) {
         const next = { ...prev };
         delete next[account.id];
         return next;
       }
-      const tokens = candidateView.tokenOptionsByAccountId[account.id] || [];
+      void loadTokensForAccount(account.id);
       return {
         ...prev,
         [account.id]: {
@@ -182,7 +326,7 @@ export default function AddChannelModal({
         <div style={{ maxHeight: 360, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {filteredAccounts.length === 0 && filteredMissingAccounts.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--color-text-muted)', padding: '12px 0', textAlign: 'center' }}>
-              {candidateView.accountOptions.length === 0 && missingAccounts.length === 0
+              {selectableAccounts.length === 0 && missingAccounts.length === 0
                 ? tr('当前没有可用的账号，请确认已有账号的令牌支持调用此模型')
                 : tr('没有匹配的账号')}
             </div>
@@ -190,10 +334,12 @@ export default function AddChannelModal({
             <>
               {filteredAccounts.map((account) => {
                 const isSelected = !!selectedAccounts[account.id];
-                const tokens = candidateView.tokenOptionsByAccountId[account.id] || [];
+                const tokens = resolveTokensForAccount(account.id);
                 const selection = selectedAccounts[account.id];
                 const isExisting = existingChannelAccountIds?.has(account.id);
+                const isLoadingTokens = !!loadingTokensByAccountId[account.id];
                 const tokenBinding = describeTokenBinding(tokens, selection?.tokenId || 0);
+                const missingGroupsLabel = (account.missingGroups || []).join('、');
 
                 return (
                   <div
@@ -207,7 +353,7 @@ export default function AddChannelModal({
                       cursor: 'pointer',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -218,45 +364,61 @@ export default function AddChannelModal({
                       {isExisting && (
                         <span className="badge badge-muted" style={{ fontSize: 10 }}>{tr('已添加')}</span>
                       )}
+                      {missingGroupsLabel && (
+                        <span className="badge badge-warning" style={{ fontSize: 10 }}>
+                          {tr('缺少分组')}: {missingGroupsLabel}
+                        </span>
+                      )}
                     </div>
 
-                    {isSelected && tokens.length > 0 && (
+                    {isSelected && (
                       <div style={{ marginTop: 6, paddingLeft: 24 }} onClick={(e) => e.stopPropagation()}>
                         <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 4 }}>{tr('令牌绑定')}:</div>
-                        <ModernSelect
-                          size="sm"
-                          value={(() => {
-                            if (!selection?.tokenId) return '0';
-                            return `${selection.tokenId}::${selection.sourceModel || ''}`;
-                          })()}
-                          onChange={(nextValue) => {
-                            if (nextValue === '0') {
-                              updateTokenForAccount(account.id, 0, '');
-                              return;
-                            }
-                            const [tokenRaw, ...sourceParts] = nextValue.split('::');
-                            updateTokenForAccount(account.id, Number.parseInt(tokenRaw, 10) || 0, sourceParts.join('::'));
-                          }}
-                          options={[
-                            {
-                              value: '0',
-                              label: tr('跟随账号默认'),
-                              description: tokenBinding.followOptionDescription,
-                            },
-                            ...tokens.map((token: RouteTokenOption) => ({
-                              value: `${token.id}::${token.sourceModel || ''}`,
-                              label: buildFixedTokenOptionLabel(token, {
-                                includeDefaultTag: true,
-                                includeSourceModel: true,
-                              }),
-                              description: buildFixedTokenOptionDescription(token),
-                            })),
-                          ]}
-                          placeholder={tr('选择绑定方式')}
-                        />
-                        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
-                          {tokenBinding.helperText}
-                        </div>
+                        {isLoadingTokens ? (
+                          <div style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span className="spinner spinner-sm" />
+                            {tr('加载账号令牌...')}
+                          </div>
+                        ) : (
+                          <>
+                            <ModernSelect
+                              size="sm"
+                              value={(() => {
+                                if (!selection?.tokenId) return '0';
+                                return `${selection.tokenId}::${selection.sourceModel || ''}`;
+                              })()}
+                              onChange={(nextValue) => {
+                                if (nextValue === '0') {
+                                  updateTokenForAccount(account.id, 0, '');
+                                  return;
+                                }
+                                const [tokenRaw, ...sourceParts] = nextValue.split('::');
+                                updateTokenForAccount(account.id, Number.parseInt(tokenRaw, 10) || 0, sourceParts.join('::'));
+                              }}
+                              options={[
+                                {
+                                  value: '0',
+                                  label: tr('跟随账号默认'),
+                                  description: tokenBinding.followOptionDescription,
+                                },
+                                ...tokens.map((token) => ({
+                                  value: `${token.id}::${token.sourceModel || ''}`,
+                                  label: buildFixedTokenOptionLabel(token, {
+                                    includeDefaultTag: true,
+                                    includeSourceModel: true,
+                                  }),
+                                  description: buildTokenDescription(token),
+                                })),
+                              ]}
+                              placeholder={tr('选择绑定方式')}
+                            />
+                            <div style={{ marginTop: 4, fontSize: 11, color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
+                              {tokens.length === 0
+                                ? tr('该账号暂无可用令牌，可先同步/创建令牌后再绑定')
+                                : tokenBinding.helperText}
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>

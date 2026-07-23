@@ -1,4 +1,8 @@
 import { anthropicMessagesTransformer } from '../../anthropic/messages/index.js';
+import {
+  applyAnthropicMessagesAggregateEvent,
+  createAnthropicMessagesAggregateState,
+} from '../../anthropic/messages/aggregator.js';
 import { createProxyStreamLifecycle } from '../../shared/protocolLifecycle.js';
 import { type DownstreamFormat, type ParsedSseEvent } from '../../shared/normalized.js';
 import { createOpenAiChatAggregateState, applyOpenAiChatStreamEvent, finalizeOpenAiChatAggregate } from './aggregator.js';
@@ -33,6 +37,48 @@ type ChatProxyStreamResult = {
   errorMessage: string | null;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasNonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function hasMeaningfulAnthropicPayload(payload: unknown): boolean {
+  if (!isRecord(payload)) return false;
+  const type = typeof payload.type === 'string' ? payload.type : '';
+
+  if (type === 'content_block_delta' && isRecord(payload.delta)) {
+    const delta = payload.delta;
+    const deltaType = typeof delta.type === 'string' ? delta.type : '';
+    if (deltaType === 'text_delta' && hasNonEmptyString(delta.text)) return true;
+    if (deltaType === 'thinking_delta' && (hasNonEmptyString(delta.thinking) || hasNonEmptyString(delta.text))) return true;
+    if (deltaType === 'input_json_delta' && hasNonEmptyString(delta.partial_json)) return true;
+    if (deltaType === 'signature_delta' && hasNonEmptyString(delta.signature)) return true;
+  }
+
+  if (type === 'content_block_start' && isRecord(payload.content_block)) {
+    const block = payload.content_block;
+    const blockType = typeof block.type === 'string' ? block.type : '';
+    if (blockType === 'tool_use' || blockType === 'server_tool_use') return true;
+    if (blockType === 'text' && hasNonEmptyString(block.text)) return true;
+    if (blockType === 'thinking' && hasNonEmptyString(block.thinking)) return true;
+    if (blockType === 'redacted_thinking' && hasNonEmptyString(block.data)) return true;
+  }
+
+  if (Array.isArray(payload.content)) {
+    for (const part of payload.content) {
+      if (!isRecord(part)) continue;
+      const partType = typeof part.type === 'string' ? part.type : '';
+      if (partType === 'tool_use' || partType === 'server_tool_use') return true;
+      if (hasNonEmptyString(part.text) || hasNonEmptyString(part.thinking) || hasNonEmptyString(part.data)) return true;
+    }
+  }
+
+  return false;
+}
+
 export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput) {
   const downstreamTransformer = input.downstreamFormat === 'claude'
     ? anthropicMessagesTransformer
@@ -47,6 +93,9 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
   const claudeContext = anthropicMessagesTransformer.createDownstreamContext();
   const chatAggregateState = input.downstreamFormat === 'openai'
     ? createOpenAiChatAggregateState()
+    : null;
+  const anthropicAggregateState = input.downstreamFormat === 'claude'
+    ? createAnthropicMessagesAggregateState()
     : null;
   let finalized = false;
   let terminalResult: ChatProxyStreamResult = {
@@ -93,6 +142,16 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
     return false;
   };
 
+  const hasMeaningfulAnthropicAggregateOutput = (): boolean => {
+    if (input.downstreamFormat !== 'claude' || !anthropicAggregateState) return false;
+    if (anthropicAggregateState.text.some((part) => part.length > 0)) return true;
+    if (anthropicAggregateState.reasoning.some((part) => part.length > 0)) return true;
+    if (anthropicAggregateState.redactedReasoning.some((part) => part.length > 0)) return true;
+    return Object.values(anthropicAggregateState.toolCalls).some((tool) => (
+      !!tool.id || !!tool.name || tool.arguments.length > 0
+    ));
+  };
+
   const hasMeaningfulNormalizedFinalOutput = (): boolean => {
     if (!terminalNormalizedFinal) return false;
     const choices = Array.isArray(terminalNormalizedFinal.choices)
@@ -110,6 +169,12 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
     return terminalNormalizedFinal.toolCalls.some((toolCall) => toolCall.id || toolCall.name || toolCall.arguments);
   };
 
+  const hasMeaningfulOutput = (): boolean => (
+    hasMeaningfulChatAggregateOutput()
+    || hasMeaningfulAnthropicAggregateOutput()
+    || hasMeaningfulNormalizedFinalOutput()
+  );
+
   const flushPendingWrites = () => {
     if (pendingWrites.length <= 0) return;
     input.writeLines([...pendingWrites]);
@@ -118,10 +183,6 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
 
   const emitLines = (lines: string[], options?: { meaningful?: boolean; force?: boolean }) => {
     if (lines.length <= 0) return;
-    if (input.downstreamFormat !== 'openai') {
-      input.writeLines(lines);
-      return;
-    }
     if (forwardedDownstreamOutput) {
       input.writeLines(lines);
       return;
@@ -138,15 +199,13 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
       input.writeLines(lines);
       return;
     }
+    // Buffer until we know the stream has meaningful content, so empty
+    // completions can still return HTTP 502 and be retried before hijack.
     pendingWrites.push(...lines);
   };
 
   const emitRaw = (chunk: string, options?: { meaningful?: boolean; force?: boolean }) => {
     if (!chunk) return;
-    if (input.downstreamFormat !== 'openai') {
-      input.writeRaw(chunk);
-      return;
-    }
     if (forwardedDownstreamOutput) {
       input.writeRaw(chunk);
       return;
@@ -168,10 +227,8 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
 
   const shouldFailEmptyChatCompletion = (): boolean => {
     if (!config.proxyEmptyContentFailEnabled) return false;
-    if (input.downstreamFormat !== 'openai') return false;
     if (terminalResult.status === 'failed') return false;
-    if (hasMeaningfulChatAggregateOutput()) return false;
-    if (hasMeaningfulNormalizedFinalOutput()) return false;
+    if (hasMeaningfulOutput()) return false;
     return true;
   };
 
@@ -180,6 +237,7 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
     finalized = true;
 
     if (shouldFailEmptyChatCompletion()) {
+      pendingWrites.length = 0;
       markFailed({
         error: {
           message: 'Upstream returned empty content',
@@ -188,7 +246,7 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
       return;
     }
 
-    if (input.downstreamFormat === 'openai' && !forwardedDownstreamOutput) {
+    if (!forwardedDownstreamOutput) {
       forwardedDownstreamOutput = true;
       flushPendingWrites();
     }
@@ -246,10 +304,21 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
       parsedPayload = consumed.parsedPayload;
       if (parsedPayload && typeof parsedPayload === 'object') {
         input.onParsedPayload?.(parsedPayload);
+        if (anthropicAggregateState) {
+          applyAnthropicMessagesAggregateEvent(
+            anthropicAggregateState,
+            anthropicMessagesTransformer.transformStreamEvent(parsedPayload, streamContext, input.modelName),
+          );
+        }
       }
       if (consumed.handled) {
-        input.writeLines(consumed.lines);
-        return consumed.done;
+        const meaningful = hasMeaningfulAnthropicPayload(parsedPayload) || hasMeaningfulAnthropicAggregateOutput();
+        emitLines(consumed.lines, { meaningful });
+        if (consumed.done) {
+          finalize();
+          return true;
+        }
+        return false;
       }
     } else {
       try {
@@ -274,14 +343,21 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
       if (input.downstreamFormat === 'openai' && chatAggregateState) {
         applyOpenAiChatStreamEvent(chatAggregateState, normalizedEvent);
       }
+      if (input.downstreamFormat === 'claude' && anthropicAggregateState) {
+        applyAnthropicMessagesAggregateEvent(anthropicAggregateState, normalizedEvent);
+      }
       emitLines(
         downstreamTransformer.serializeStreamEvent(normalizedEvent, streamContext, claudeContext),
         {
-          meaningful: hasMeaningfulChatAggregateOutput(),
+          meaningful: hasMeaningfulOutput(),
           force: isFailurePayload,
         },
       );
-      return input.downstreamFormat === 'claude' && claudeContext.doneSent;
+      if (input.downstreamFormat === 'claude' && claudeContext.doneSent) {
+        finalize();
+        return true;
+      }
+      return false;
     }
 
     if (input.downstreamFormat === 'openai') {
@@ -289,10 +365,14 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
       return false;
     }
 
-    input.writeLines(anthropicMessagesTransformer.serializeStreamEvent({
+    emitLines(anthropicMessagesTransformer.serializeStreamEvent({
       contentDelta: eventBlock.data,
-    }, streamContext, claudeContext));
-    return claudeContext.doneSent;
+    }, streamContext, claudeContext), { meaningful: true });
+    if (claudeContext.doneSent) {
+      finalize();
+      return true;
+    }
+    return false;
   };
 
   return {
@@ -320,6 +400,13 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
           { meaningful: true },
         );
       } else {
+        if (anthropicAggregateState && hasMeaningfulAnthropicPayload(payload)) {
+          // Final payload with content counts as meaningful even before streaming.
+          applyAnthropicMessagesAggregateEvent(
+            anthropicAggregateState,
+            anthropicMessagesTransformer.transformStreamEvent(payload, streamContext, input.modelName),
+          );
+        }
         emitLines(
           anthropicMessagesTransformer.serializeUpstreamFinalAsStream(
             payload,
@@ -328,7 +415,7 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
             streamContext,
             claudeContext,
           ),
-          { meaningful: true },
+          { meaningful: hasMeaningfulAnthropicPayload(payload) || hasMeaningfulAnthropicAggregateOutput() },
         );
       }
       finalize();
