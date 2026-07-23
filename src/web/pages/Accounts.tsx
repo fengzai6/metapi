@@ -2755,6 +2755,11 @@ export default function Accounts() {
                     return (
                       <MobileCard
                         key={a.id}
+                        className={
+                          a.status === "disabled" || a.site?.status === "disabled"
+                            ? "row-status-disabled"
+                            : undefined
+                        }
                         title={resolveAccountDisplayName(a)}
                         headerActions={
                           <div
@@ -3125,7 +3130,7 @@ export default function Accounts() {
                           onClick={(event) =>
                             handleAccountRowClick(a.id, event)
                           }
-                          className={`animate-slide-up stagger-${Math.min(i + 1, 5)} row-selectable ${selectedAccountIds.includes(a.id) ? "row-selected" : ""} ${highlightAccountId === a.id ? "row-focus-highlight" : ""}`.trim()}
+                          className={`animate-slide-up stagger-${Math.min(i + 1, 5)} row-selectable ${selectedAccountIds.includes(a.id) ? "row-selected" : ""} ${highlightAccountId === a.id ? "row-focus-highlight" : ""} ${a.status === "disabled" || a.site?.status === "disabled" ? "row-status-disabled" : ""}`.trim()}
                         >
                           <td>
                             <input

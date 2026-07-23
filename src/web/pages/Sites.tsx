@@ -2040,6 +2040,7 @@ export default function Sites() {
                 return (
                   <MobileCard
                     key={site.id}
+                    className={site.status === 'disabled' ? 'row-status-disabled' : undefined}
                     title={(
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <span>{site.name || '-'}</span>
@@ -2287,7 +2288,7 @@ export default function Sites() {
                       else rowRefs.current.delete(site.id);
                     }}
                     onClick={(event) => handleSiteRowClick(site.id, event)}
-                    className={`animate-slide-up stagger-${Math.min(i + 1, 5)} row-selectable ${selectedSiteIds.includes(site.id) ? 'row-selected' : ''} ${highlightSiteId === site.id ? 'row-focus-highlight' : ''}`.trim()}
+                    className={`animate-slide-up stagger-${Math.min(i + 1, 5)} row-selectable ${selectedSiteIds.includes(site.id) ? 'row-selected' : ''} ${highlightSiteId === site.id ? 'row-focus-highlight' : ''} ${site.status === 'disabled' ? 'row-status-disabled' : ''}`.trim()}
                   >
                     <td>
                       <input

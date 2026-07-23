@@ -1799,6 +1799,13 @@ body {
   animation: row-focus-glow 2.2s ease;
 }
 
+/* Disabled site/account rows — keep interactive, just de-emphasize.
+   Opacity must target children: .animate-slide-up uses fill-mode:both and
+   ends at opacity:1 on the row itself, which would override a row-level value. */
+.row-status-disabled > * {
+  opacity: 0.55;
+}
+
 .announcement-rich-content {
   font-size: 13px;
   color: var(--color-text-secondary);
